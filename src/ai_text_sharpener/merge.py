@@ -22,17 +22,19 @@ def _same_row(h_a: int, yc_a: float, h_b: int, yc_b: float, overlap: float = 0.6
     return abs(yc_a - yc_b) < min(h_a, h_b) * overlap
 
 
-def _is_latin(ch: str) -> bool:
-    """Return True if ch is an ASCII letter or digit (i.e. a wordy latin char)."""
-    return ch.isascii() and (ch.isalnum())
+def _is_cjk(ch: str) -> bool:
+    return "一" <= ch <= "鿿" or "　" <= ch <= "〿"
 
 
 def _join_text(left: str, right: str) -> str:
-    """Concatenate two text fragments, inserting a space between latin words."""
+    """Concatenate two text fragments. Normalize a trailing half-width colon
+    to its full-width form when the next character is CJK, so '作者:李南樽'
+    becomes '作者：李南樽' to match the visual spacing of OCR-given full-width
+    colons (as in '专业：制药工程')."""
     if not left or not right:
         return left + right
-    if _is_latin(left[-1]) and _is_latin(right[0]):
-        return left + " " + right
+    if left.endswith(":") and _is_cjk(right[0]):
+        return left[:-1] + "：" + right
     return left + right
 
 
@@ -42,9 +44,9 @@ def merge_horizontal_neighbors(
 ) -> List[TextRegion]:
     """Merge same-row regions whose horizontal gap is < gap_ratio × min(height).
 
-    Latin-latin word boundaries get a single space inserted. Default
-    gap_ratio=1.0 is conservative; raise it if OCR splits a line with
-    visibly larger gaps (e.g. justified text)."""
+    A trailing half-width colon before CJK is normalized to full-width so the
+    rendered spacing matches OCR-given full-width colons. Default gap_ratio=1.0
+    is conservative; raise it if OCR splits a line with visibly larger gaps."""
     if not regions:
         return []
 
