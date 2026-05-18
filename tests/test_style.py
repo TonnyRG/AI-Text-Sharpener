@@ -26,6 +26,15 @@ def test_sample_text_color_picks_dark_strokes():
     assert sum(rgb) < 100
 
 
+def test_sample_text_color_picks_light_strokes_on_dark_bg():
+    """White text on dark blue background: should sample white, not background."""
+    img = np.full((100, 200, 3), 30, dtype=np.uint8)  # dark blue-ish bg
+    img[40:60, 80:120] = 255  # white "text strokes"
+    rect = (70, 30, 60, 40)
+    rgb = sample_text_color(img, rect)
+    assert sum(rgb) > 600  # close to white (765)
+
+
 def test_sample_background_color_picks_outside_border():
     img = _make_test_image()
     rect = (70, 30, 60, 40)

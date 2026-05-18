@@ -22,11 +22,29 @@ def _same_row(h_a: int, yc_a: float, h_b: int, yc_b: float, overlap: float = 0.6
     return abs(yc_a - yc_b) < min(h_a, h_b) * overlap
 
 
+def _is_latin(ch: str) -> bool:
+    """Return True if ch is an ASCII letter or digit (i.e. a wordy latin char)."""
+    return ch.isascii() and (ch.isalnum())
+
+
+def _join_text(left: str, right: str) -> str:
+    """Concatenate two text fragments, inserting a space between latin words."""
+    if not left or not right:
+        return left + right
+    if _is_latin(left[-1]) and _is_latin(right[0]):
+        return left + " " + right
+    return left + right
+
+
 def merge_horizontal_neighbors(
     regions: List[TextRegion],
-    gap_ratio: float = 2.0,
+    gap_ratio: float = 1.0,
 ) -> List[TextRegion]:
-    """Merge same-row regions whose horizontal gap is < gap_ratio × min(height)."""
+    """Merge same-row regions whose horizontal gap is < gap_ratio × min(height).
+
+    Latin-latin word boundaries get a single space inserted. Default
+    gap_ratio=1.0 is conservative; raise it if OCR splits a line with
+    visibly larger gaps (e.g. justified text)."""
     if not regions:
         return []
 
@@ -68,7 +86,7 @@ def merge_horizontal_neighbors(
                 new_bbox = [[nx0, ny0], [nx1, ny0], [nx1, ny1], [nx0, ny1]]
                 new_region = TextRegion(
                     bbox=new_bbox,
-                    text=cr.text + r.text,
+                    text=_join_text(cr.text, r.text),
                     confidence=min(cr.confidence, r.confidence),
                 )
                 cur = (new_region, nx0, ny0, nx1 - nx0, ny1 - ny0)

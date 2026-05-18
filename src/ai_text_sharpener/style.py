@@ -27,18 +27,31 @@ def bbox_to_rect(bbox) -> Rect:
 
 
 def sample_text_color(img: np.ndarray, rect: Rect) -> RGB:
-    """Sample text color by taking the median of the darkest 20% pixels in bbox."""
+    """Sample text color by picking the foreground pixels (those whose luminance
+    is farthest from the bbox-mean luminance).
+
+    Works for both dark-on-light and light-on-dark text. The bbox is mostly
+    background pixels, so the mean luminance approximates the background;
+    foreground (text strokes) are the pixels furthest from that mean.
+    """
     x, y, w, h = rect
     patch = img[y:y+h, x:x+w]
     if patch.size == 0:
         return (0, 0, 0)
     lum = patch.mean(axis=2)
-    threshold = np.percentile(lum, 20)
-    mask = lum <= threshold
+    bg_lum = lum.mean()
+    if bg_lum >= 128:
+        # Light background → text is dark: pick the darkest 20%.
+        threshold = np.percentile(lum, 20)
+        mask = lum <= threshold
+    else:
+        # Dark background → text is light: pick the brightest 20%.
+        threshold = np.percentile(lum, 80)
+        mask = lum >= threshold
     if not mask.any():
         return tuple(int(c) for c in patch.reshape(-1, 3).mean(axis=0))
-    dark_pixels = patch[mask]
-    return tuple(int(c) for c in np.median(dark_pixels, axis=0))
+    fg_pixels = patch[mask]
+    return tuple(int(c) for c in np.median(fg_pixels, axis=0))
 
 
 def sample_background_color(img: np.ndarray, rect: Rect, ring_px: int = 3) -> RGB:

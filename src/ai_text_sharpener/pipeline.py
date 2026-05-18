@@ -20,7 +20,7 @@ def sharpen_image(
     output_png: Path,
     output_svg: Path,
     font_spec: FontSpec,
-    min_height_ratio: float = 0.015,
+    min_height_ratio: float = 0.025,
     max_font_ratio: float = 0.05,
 ) -> None:
     pil_img = Image.open(input_path).convert("RGB")
