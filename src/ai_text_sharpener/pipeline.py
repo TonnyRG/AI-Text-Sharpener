@@ -9,6 +9,7 @@ from PIL import Image
 from .detect import detect_text
 from .erase import soft_erase
 from .fonts import FontSpec, assign_fonts
+from .merge import merge_horizontal_neighbors
 from .rasterize import svg_to_png
 from .style import bbox_to_rect, extract_style
 from .svg_gen import TextElement, generate_svg
@@ -36,6 +37,9 @@ def sharpen_image(
     regions = [r for r in regions if (bbox_to_rect(r.bbox)[3]) >= min_h]
     if not regions:
         raise RuntimeError(f"All detected regions were filtered out for {input_path}")
+
+    # Merge same-row adjacent bboxes back into single lines.
+    regions = merge_horizontal_neighbors(regions)
 
     styled = [(r, extract_style(img, r)) for r in regions]
 
