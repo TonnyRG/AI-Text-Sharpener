@@ -19,6 +19,8 @@ def sharpen_image(
     output_png: Path,
     output_svg: Path,
     font_spec: FontSpec,
+    min_height_ratio: float = 0.015,
+    max_font_ratio: float = 0.05,
 ) -> None:
     pil_img = Image.open(input_path).convert("RGB")
     img = np.array(pil_img)
@@ -28,6 +30,13 @@ def sharpen_image(
     if not regions:
         raise RuntimeError(f"No text detected in {input_path}")
 
+    # Drop tiny regions (logos, ornaments) and OCR bboxes whose height
+    # is below min_height_ratio of image height.
+    min_h = h * min_height_ratio
+    regions = [r for r in regions if (bbox_to_rect(r.bbox)[3]) >= min_h]
+    if not regions:
+        raise RuntimeError(f"All detected regions were filtered out for {input_path}")
+
     styled = [(r, extract_style(img, r)) for r in regions]
 
     erased = soft_erase(img, styled)
@@ -35,16 +44,21 @@ def sharpen_image(
     sizes = [s.font_size_px for _, s in styled]
     font_families = assign_fonts(sizes, font_spec)
 
+    # Cap font size: PaddleOCR sometimes returns bboxes that include
+    # decorative padding, making bbox_h × 0.85 absurdly large.
+    font_size_cap = int(h * max_font_ratio)
+
     texts = []
     for (region, style), family in zip(styled, font_families):
         x, y, rw, rh = bbox_to_rect(region.bbox)
         weight = "bold" if family.lower().endswith(("bold", "black")) else "normal"
+        rendered_size = min(style.font_size_px, font_size_cap)
         texts.append(TextElement(
             x=x + rw // 2,
             y=y + rh // 2,
             text=region.text,
             font_family=family.replace(" Bold", "").replace(" Black", ""),
-            font_size_px=style.font_size_px,
+            font_size_px=rendered_size,
             color=style.color,
             font_weight=weight,
         ))
