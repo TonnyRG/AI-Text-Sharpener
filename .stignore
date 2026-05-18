@@ -1,0 +1,33 @@
+// Syncthing ignore rules. NOT read by git — keep in sync with .gitignore
+// where it matters, but this file is the only thing syncthing obeys.
+
+// Python virtualenv — Python path is baked into binaries, must be recreated on each machine
+.venv/
+
+// Python build / cache
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+// Editor / OS
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+// Pipeline outputs (large, regeneratable)
+scripts/debug_erased.png
+scripts/out_*.png
+scripts/out_*.svg
+examples/before_after/*.png
+examples/before_after/*.svg
+examples/before_after/*.jpg
+tests/fixtures/output/
+
+// Per-machine test artifacts
+test_*.png

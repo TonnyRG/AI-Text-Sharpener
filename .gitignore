@@ -13,3 +13,6 @@ tests/fixtures/output/
 scripts/debug_erased.png
 scripts/out_*.png
 scripts/out_*.svg
+examples/before_after/*.png
+examples/before_after/*.svg
+examples/before_after/*.jpg
