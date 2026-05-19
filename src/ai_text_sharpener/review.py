@@ -18,6 +18,7 @@ class TextSpan:
     text: str
     color: Optional[RGB] = None
     font_size_px: Optional[int] = None
+    font_family: Optional[str] = None
     font_weight: Optional[str] = None
     vertical_align: Optional[str] = None  # None | "super" | "sub"
 
@@ -27,6 +28,8 @@ class TextSpan:
             d["color"] = list(self.color)
         if self.font_size_px is not None:
             d["font_size_px"] = self.font_size_px
+        if self.font_family is not None:
+            d["font_family"] = self.font_family
         if self.font_weight is not None:
             d["font_weight"] = self.font_weight
         if self.vertical_align:
@@ -40,6 +43,7 @@ class TextSpan:
             text=str(data.get("text", "")),
             color=_rgb(data["color"]) if data.get("color") is not None else None,
             font_size_px=int(data["font_size_px"]) if data.get("font_size_px") is not None else None,
+            font_family=str(data["font_family"]) if data.get("font_family") else None,
             font_weight=str(data["font_weight"]) if data.get("font_weight") else None,
             vertical_align=str(va) if va in ("super", "sub") else None,
         )

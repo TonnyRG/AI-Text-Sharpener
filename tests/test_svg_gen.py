@@ -1,6 +1,6 @@
 import base64
 import re
-from ai_text_sharpener.svg_gen import generate_svg, TextElement
+from ai_text_sharpener.svg_gen import generate_svg, TextElement, TextSpan
 
 
 def test_generate_svg_embeds_background_image():
@@ -43,3 +43,21 @@ def test_generate_svg_adds_letter_spacing():
                          letter_spacing_px=2.5)]
     svg = generate_svg(width=200, height=100, background_b64="x", texts=texts)
     assert 'letter-spacing="2.5px"' in svg
+
+
+def test_generate_svg_adds_span_font_family():
+    texts = [
+        TextElement(
+            x=100, y=100, text="2026 年",
+            font_family="Noto Sans SC", font_size_px=20,
+            color=(0, 0, 0), spans=[
+                TextSpan(text="2026", font_family="Times New Roman"),
+                TextSpan(text=" 年", font_family="Noto Sans SC"),
+            ],
+        )
+    ]
+
+    svg = generate_svg(width=200, height=100, background_b64="x", texts=texts)
+
+    assert '<tspan font-family="Times New Roman">2026</tspan>' in svg
+    assert '<tspan font-family="Noto Sans SC"> 年</tspan>' in svg

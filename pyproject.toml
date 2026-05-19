@@ -13,6 +13,7 @@ dependencies = [
     "numpy>=1.26.0",
     "resvg-py>=0.1.0",
     "click>=8.1.0",
+    "fonttools>=4.50",
     "python-pptx>=0.6.21",
     "pywin32>=306; platform_system == 'Windows'",
 ]

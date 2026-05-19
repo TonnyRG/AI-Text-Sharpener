@@ -8,7 +8,7 @@ from PIL import Image
 
 from .detect import detect_text
 from .erase import soft_erase
-from .fonts import FontSpec, assign_fonts
+from .fonts import FontSpec, assign_fonts, prepare_render_font_dirs
 from .merge import merge_horizontal_neighbors
 from .rasterize import svg_to_png
 from .review import EditableRegion, ReviewDocument
@@ -188,6 +188,7 @@ def render_review_document(
                     text=s.text,
                     color=s.color,
                     font_size_px=s.font_size_px,
+                    font_family=s.font_family,
                     font_weight=s.font_weight,
                     vertical_align=s.vertical_align,
                 )
@@ -203,7 +204,18 @@ def render_review_document(
 
     svg_text = generate_svg(w, h, bg_b64, texts)
     Path(output_svg).write_text(svg_text, encoding="utf-8")
-    svg_to_png(svg_text, output_png, font_dirs=[fonts_dir] if fonts_dir else None)
+    svg_to_png(
+        svg_text,
+        output_png,
+        font_dirs=prepare_render_font_dirs(
+            fonts_dir,
+            [
+                family
+                for region in active_regions
+                for family in [region.font_family] + [s.font_family for s in region.spans if s.font_family]
+            ],
+        ),
+    )
 
 
 def sharpen_image(

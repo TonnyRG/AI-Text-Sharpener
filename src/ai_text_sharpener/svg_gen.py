@@ -10,6 +10,7 @@ class TextSpan:
     text: str
     color: Optional[Tuple[int, int, int]] = None
     font_size_px: Optional[int] = None
+    font_family: Optional[str] = None
     font_weight: Optional[str] = None
     vertical_align: Optional[str] = None  # None | "super" | "sub"
 
@@ -66,6 +67,8 @@ def _text_tag(t: TextElement) -> str:
             attrs += f' font-size="{span.font_size_px}"'
         elif span.vertical_align in ("super", "sub"):
             attrs += f' font-size="{max(8, int(t.font_size_px * 0.65))}"'
+        if span.font_family is not None:
+            attrs += f' font-family="{escape(span.font_family)}"'
         if span.font_weight is not None:
             attrs += f' font-weight="{span.font_weight}"'
         if span.vertical_align in ("super", "sub"):

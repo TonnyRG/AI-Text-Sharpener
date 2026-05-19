@@ -340,13 +340,18 @@ EDITOR_HTML = r"""<!doctype html>
 
     .span-grid {
       display: grid;
-      grid-template-columns: 1fr 38px 72px 80px 28px;
-      gap: 6px;
+      grid-template-columns: 52px 84px minmax(0, 1fr);
+      gap: 8px;
       align-items: end;
     }
 
     .span-grid .field { margin: 0; }
     .span-grid label { font-size: 11px; }
+    .span-grid input,
+    .span-grid select,
+    .span-grid textarea { min-width: 0; }
+    .span-text,
+    .span-family { grid-column: 1 / -1; }
 
     .ctx-menu {
       position: fixed;
@@ -632,6 +637,7 @@ EDITOR_HTML = r"""<!doctype html>
     let autoRenderTimer = null;
     let autoRenderInFlight = false;
     let autoRenderPending = false;
+    let fontOptionGroups = [];
     const AUTO_RENDER_DELAY_MS = 800;
 
     function setStatus(text) {
@@ -832,7 +838,7 @@ EDITOR_HTML = r"""<!doctype html>
 
       const rawSpans = region.spans && region.spans.length
         ? region.spans
-        : [{ text: region.text, color: null, font_size_px: null, font_weight: null }];
+        : [{ text: region.text, color: null, font_size_px: null, font_family: null, font_weight: null }];
 
       const segments = [];
       let totalWidth = 0;
@@ -848,11 +854,12 @@ EDITOR_HTML = r"""<!doctype html>
         const size = Math.max(8, rawSize * scale);
         const yOffset = va === 'super' ? -size * 0.4 : va === 'sub' ? size * 0.2 : 0;
         const weight = span.font_weight || baseWeight;
+        const segFamily = span.font_family || family;
         const color = span.color ? `rgb(${span.color[0]}, ${span.color[1]}, ${span.color[2]})` : baseColor;
-        ctx.font = `${weight} ${size}px ${family}`;
+        ctx.font = `${weight} ${size}px ${segFamily}`;
         const widths = chars.map(c => ctx.measureText(c).width);
         const segW = widths.reduce((a, b) => a + b, 0);
-        segments.push({ chars, widths, size, weight, color, yOffset });
+        segments.push({ chars, widths, size, weight, family: segFamily, color, yOffset });
         totalWidth += segW;
         totalChars += chars.length;
       }
@@ -868,7 +875,7 @@ EDITOR_HTML = r"""<!doctype html>
       else if (anchor === 'right') cursor = x - totalWidth;
       else cursor = x - totalWidth / 2;
       for (const seg of segments) {
-        ctx.font = `${seg.weight} ${seg.size}px ${family}`;
+        ctx.font = `${seg.weight} ${seg.size}px ${seg.family}`;
         ctx.fillStyle = seg.color;
         const sy = y + (seg.yOffset || 0);
         for (let i = 0; i < seg.chars.length; i += 1) {
@@ -1185,6 +1192,8 @@ EDITOR_HTML = r"""<!doctype html>
         const data = await res.json();
         const groups = data.system_groups || [];
         const user = data.user || [];
+        fontOptionGroups = groups.map(g => ({ label: g.label, names: g.names || [] }));
+        if (user.length) fontOptionGroups.push({ label: 'Imported', names: user.map(f => f.family) });
         let css = '';
         for (const f of user) {
           const url = '/fonts/' + encodeURIComponent(f.filename);
@@ -1215,6 +1224,7 @@ EDITOR_HTML = r"""<!doctype html>
           ? `Drop .ttf/.otf/.ttc files in ${data.fonts_dir} then refresh to import more fonts.`
           : '';
         if (fontsDirHint) pick.title = fontsDirHint;
+        renderSpans();
       } catch (e) {}
     }
 
@@ -1256,6 +1266,22 @@ EDITOR_HTML = r"""<!doctype html>
         .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    function fontOptionsHtml(selected, inheritLabel = '(inherit)') {
+      let html = `<option value=""${!selected ? ' selected' : ''}>${escHtml(inheritLabel)}</option>`;
+      for (const group of fontOptionGroups) {
+        if (!group.names || !group.names.length) continue;
+        html += `<optgroup label="${escHtml(group.label)}">`;
+        for (const name of group.names) {
+          html += `<option value="${escHtml(name)}"${name === selected ? ' selected' : ''}>${escHtml(name)}</option>`;
+        }
+        html += '</optgroup>';
+      }
+      if (selected && !fontOptionGroups.some(g => (g.names || []).includes(selected))) {
+        html += `<option value="${escHtml(selected)}" selected>${escHtml(selected)}</option>`;
+      }
+      return html;
+    }
+
     function renderSpans() {
       const region = selectedRegion();
       if (!region) { spansListEl.innerHTML = ''; return; }
@@ -1274,6 +1300,7 @@ EDITOR_HTML = r"""<!doctype html>
       spans.forEach((span, i) => {
         const color = span.color ? rgbToHex(span.color) : rgbToHex(region.color || [0,0,0]);
         const size = span.font_size_px != null ? span.font_size_px : region.font_size_px;
+        const family = span.font_family || '';
         const weight = span.font_weight || '';
         const row = document.createElement('div');
         row.className = 'span-row';
@@ -1289,7 +1316,7 @@ EDITOR_HTML = r"""<!doctype html>
             <button type="button" class="sm" data-del="${i}" title="Remove span">×</button>
           </div>
           <div class="span-grid">
-            <div class="field">
+            <div class="field span-text">
               <label>Text</label>
               <textarea rows="2" style="min-height:0;resize:vertical" data-span="${i}" data-prop="text">${escHtml(span.text)}</textarea>
             </div>
@@ -1309,7 +1336,12 @@ EDITOR_HTML = r"""<!doctype html>
                 <option value="bold"${weight === 'bold' ? ' selected' : ''}>bold</option>
               </select>
             </div>
-            <div></div>
+            <div class="field span-family">
+              <label>Family</label>
+              <select data-span="${i}" data-prop="font_family">
+                ${fontOptionsHtml(family)}
+              </select>
+            </div>
           </div>`;
         spansListEl.appendChild(row);
       });
@@ -1433,6 +1465,7 @@ EDITOR_HTML = r"""<!doctype html>
     function _sameSpanStyle(a, b) {
       return _sameColor(a.color, b.color)
         && a.font_size_px === b.font_size_px
+        && a.font_family === b.font_family
         && a.font_weight === b.font_weight
         && a.vertical_align === b.vertical_align;
     }
@@ -1452,7 +1485,7 @@ EDITOR_HTML = r"""<!doctype html>
       if (!region.spans || !region.spans.length) {
         region.spans = [{
           text: region.text || '',
-          color: null, font_size_px: null, font_weight: null, vertical_align: null,
+          color: null, font_size_px: null, font_family: null, font_weight: null, vertical_align: null,
         }];
       }
     }
@@ -1464,7 +1497,7 @@ EDITOR_HTML = r"""<!doctype html>
       if (action === 'color') return s => { s.color = payload; };
       if (action === 'size') return s => { s.font_size_px = payload; };
       if (action === 'clear-format') return s => {
-        s.color = null; s.font_size_px = null; s.font_weight = null; s.vertical_align = null;
+        s.color = null; s.font_size_px = null; s.font_family = null; s.font_weight = null; s.vertical_align = null;
       };
       return () => {};
     }
@@ -1558,6 +1591,8 @@ EDITOR_HTML = r"""<!doctype html>
         span.color = hexToRgb(el.value);
       } else if (prop === 'font_size_px') {
         span.font_size_px = Math.max(1, Number(el.value) || 1);
+      } else if (prop === 'font_family') {
+        span.font_family = el.value.trim() || null;
       } else if (prop === 'font_weight') {
         span.font_weight = el.value || null;
       } else if (prop === 'vertical_align') {
@@ -1582,7 +1617,7 @@ EDITOR_HTML = r"""<!doctype html>
       const region = selectedRegion();
       if (!region) return;
       markMutated('span-init-' + Date.now());
-      region.spans = [{ text: region.text, color: null, font_size_px: null, font_weight: null }];
+      region.spans = [{ text: region.text, color: null, font_size_px: null, font_family: null, font_weight: null }];
       renderSpans();
     });
 
@@ -1591,7 +1626,7 @@ EDITOR_HTML = r"""<!doctype html>
       if (!region) return;
       markMutated('span-add-' + Date.now());
       if (!region.spans) region.spans = [];
-      region.spans.push({ text: '', color: null, font_size_px: null, font_weight: null });
+      region.spans.push({ text: '', color: null, font_size_px: null, font_family: null, font_weight: null });
       renderSpans();
     });
 
@@ -2021,7 +2056,7 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
             output = self.project_path.parent / (self.project_path.stem + "_export.pptx")
             try:
                 for item in load_review_project(self.project_path).items:
-                    self._render_if_stale(item)
+                    self._render_if_stale(item, force=True)
                 result = export_project_to_pptx(self.project_path, output)
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=500)
@@ -2034,7 +2069,7 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("content-length", "0"))
         return self.rfile.read(length) if length else b""
 
-    def _render_if_stale(self, item: ReviewProjectItem) -> bool:
+    def _render_if_stale(self, item: ReviewProjectItem, force: bool = False) -> bool:
         """Re-render the slide's PNG if it's missing or older than the review JSON.
 
         Returns True when a fresh render ran, False when the existing PNG was fresh
@@ -2048,10 +2083,14 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
         image_path = self._item_image_path(item)
         if not image_path.exists():
             return False
-        if output_png.exists() and output_png.stat().st_mtime >= review_path.stat().st_mtime:
+        if (
+            not force
+            and output_png.exists()
+            and output_png.stat().st_mtime >= review_path.stat().st_mtime
+        ):
             return False
         review = load_review_document(review_path)
-        render_review_document(image_path, output_png, output_svg, review)
+        render_review_document(image_path, output_png, output_svg, review, fonts_dir=self.fonts_dir)
         return True
 
     def _redetect_merge(self, current_review: ReviewDocument, image_path: Path) -> int:

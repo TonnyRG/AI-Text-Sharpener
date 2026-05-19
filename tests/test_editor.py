@@ -155,3 +155,74 @@ def test_editor_server_handles_review_project(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_editor_export_ppt_force_renders_with_fonts_dir(tmp_path, monkeypatch):
+    image_path = tmp_path / "slide_001.jpg"
+    Image.new("RGB", (120, 60), "white").save(image_path)
+    review_path = tmp_path / "slide_001_review.json"
+    write_review_document(_review(image_path), review_path)
+    output_png = tmp_path / "slide_001_final.png"
+    Image.new("RGB", (120, 60), "white").save(output_png)
+    output_svg = tmp_path / "slide_001_final.svg"
+    fonts_dir = tmp_path / "fonts"
+    fonts_dir.mkdir()
+    project_path = tmp_path / "review_project.json"
+    write_review_project(
+        ReviewProject(
+            items=[
+                ReviewProjectItem(
+                    id="slide-001",
+                    name="Slide 1",
+                    image_path=image_path.name,
+                    review_path=review_path.name,
+                    output_png=output_png.name,
+                    output_svg=output_svg.name,
+                ),
+            ]
+        ),
+        project_path,
+    )
+    calls = []
+
+    def fake_render(image, png, svg, review, fonts_dir=None):
+        calls.append((image, png, svg, fonts_dir))
+        Image.new("RGB", (120, 60), "white").save(png)
+        svg.write_text("<svg></svg>", encoding="utf-8")
+
+    def fake_export(project, output):
+        output.write_bytes(b"pptx")
+        return output
+
+    monkeypatch.setattr("ai_text_sharpener.editor.render_review_document", fake_render)
+    monkeypatch.setattr("ai_text_sharpener.editor.export_project_to_pptx", fake_export)
+
+    server = make_server(
+        image_path=None,
+        review_path=None,
+        output_png=None,
+        output_svg=None,
+        host="127.0.0.1",
+        port=0,
+        project_path=project_path,
+        fonts_dir=fonts_dir,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        request = urllib.request.Request(
+            f"{base_url}/api/export-ppt",
+            data=b"",
+            method="POST",
+        )
+        with opener.open(request, timeout=5) as response:
+            exported = json.loads(response.read().decode("utf-8"))
+        assert exported["ok"] is True
+        assert calls
+        assert calls[0][3] == fonts_dir
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

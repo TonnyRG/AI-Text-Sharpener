@@ -1,6 +1,7 @@
 """Assign user-specified fonts to detected regions based on font size threshold."""
 import os
 import platform
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -128,7 +129,7 @@ def _iter_families_in_file(path: Path) -> List[str]:
     return families
 
 
-def _system_font_dirs() -> List[Path]:
+def system_font_dirs() -> List[Path]:
     dirs: List[Path] = []
     system = platform.system()
     if system == "Windows":
@@ -152,6 +153,190 @@ def _system_font_dirs() -> List[Path]:
     return [d for d in dirs if d.exists()]
 
 
+def render_font_dirs(fonts_dir: Optional[Path] = None) -> List[Path]:
+    """Font directories to give the SVG rasterizer.
+
+    Browsers can see installed fonts on their own, but resvg needs explicit
+    directories on Windows for families such as Noto Serif SC. Put project
+    fonts first so user-provided files win over similarly named system fonts.
+    """
+    candidates: List[Path] = []
+    if fonts_dir:
+        candidates.append(Path(fonts_dir))
+    candidates.extend(system_font_dirs())
+
+    seen: set[str] = set()
+    result: List[Path] = []
+    for directory in candidates:
+        if not directory.exists():
+            continue
+        key = str(directory.resolve()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(directory)
+    return result
+
+
+def prepare_render_font_dirs(
+    fonts_dir: Optional[Path] = None,
+    families: Optional[List[str]] = None,
+) -> List[Path]:
+    """Return rasterizer font dirs, with static instances for variable fonts.
+
+    Some Windows CJK fonts such as ``Noto Serif SC`` are installed as variable
+    fonts whose default instance is ExtraLight/Thin. Browser preview can apply
+    ``font-weight`` through the variable axis, but resvg currently treats those
+    files as a single face. We generate Regular/Bold static instances in
+    ``fonts/.generated`` and put that directory before system fonts.
+    """
+    dirs = render_font_dirs(fonts_dir)
+    cache_dir = (Path(fonts_dir) if fonts_dir else Path(".ats-font-cache")) / ".generated"
+    generated = _ensure_static_weight_fonts(families or [], cache_dir, dirs)
+    if generated:
+        return [cache_dir] + dirs
+    return dirs
+
+
+_VARIABLE_FONT_CACHE: dict[str, Optional[Path]] = {}
+
+
+def _ensure_static_weight_fonts(
+    families: List[str],
+    cache_dir: Path,
+    search_dirs: List[Path],
+) -> bool:
+    needed = sorted({f for f in families if f and _looks_like_weight_variable_family(f)})
+    if not needed:
+        return False
+    made_any = False
+    for family in needed:
+        source = _find_weight_variable_font(family, search_dirs)
+        if source is None:
+            continue
+        if _ensure_static_pair(source, family, cache_dir):
+            made_any = True
+    return made_any
+
+
+def _looks_like_weight_variable_family(family: str) -> bool:
+    lowered = family.lower()
+    return any(token in lowered for token in (
+        "noto serif sc",
+        "noto sans sc",
+        "noto serif cjk sc",
+        "noto sans cjk sc",
+        "source han serif sc",
+        "source han sans sc",
+    ))
+
+
+def _find_weight_variable_font(family: str, search_dirs: List[Path]) -> Optional[Path]:
+    key = family.lower()
+    if key in _VARIABLE_FONT_CACHE:
+        return _VARIABLE_FONT_CACHE[key]
+    for directory in search_dirs:
+        if not directory.exists():
+            continue
+        for pattern in _FONT_EXTENSIONS:
+            for path in directory.glob(pattern):
+                try:
+                    if _font_file_has_family_and_weight_axis(path, family):
+                        _VARIABLE_FONT_CACHE[key] = path
+                        return path
+                except Exception:
+                    continue
+    _VARIABLE_FONT_CACHE[key] = None
+    return None
+
+
+def _font_file_has_family_and_weight_axis(path: Path, family: str) -> bool:
+    from fontTools.ttLib import TTFont
+
+    font = TTFont(str(path), lazy=True)
+    try:
+        if "fvar" not in font:
+            return False
+        if not any(axis.axisTag == "wght" for axis in font["fvar"].axes):
+            return False
+        names = _family_names_from_ttfont(font)
+        return family in names
+    finally:
+        font.close()
+
+
+def _family_names_from_ttfont(font) -> set[str]:
+    names: set[str] = set()
+    for name_id in (1, 16):
+        for record in font["name"].names:
+            if record.nameID != name_id:
+                continue
+            try:
+                names.add(record.toUnicode())
+            except Exception:
+                continue
+    return names
+
+
+def _ensure_static_pair(source: Path, family: str, cache_dir: Path) -> bool:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "", family) or source.stem
+    outputs = [
+        (400, "Regular", cache_dir / f"{safe}-Regular.ttf"),
+        (700, "Bold", cache_dir / f"{safe}-Bold.ttf"),
+    ]
+    if all(path.exists() and path.stat().st_mtime >= source.stat().st_mtime for _, _, path in outputs):
+        return True
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    for weight, style, target in outputs:
+        if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
+            continue
+        _write_static_weight_instance(source, target, family, style, weight)
+    return True
+
+
+def _write_static_weight_instance(
+    source: Path,
+    target: Path,
+    family: str,
+    style: str,
+    weight: int,
+) -> None:
+    from fontTools.ttLib import TTFont
+    from fontTools.varLib.instancer import instantiateVariableFont
+
+    font = TTFont(str(source))
+    instance = instantiateVariableFont(font, {"wght": weight}, inplace=False)
+    instance["OS/2"].usWeightClass = weight
+    instance["head"].macStyle = 1 if weight >= 700 else 0
+    if weight >= 700:
+        instance["OS/2"].fsSelection |= 0x20
+        instance["OS/2"].fsSelection &= ~0x40
+    else:
+        instance["OS/2"].fsSelection |= 0x40
+        instance["OS/2"].fsSelection &= ~0x20
+    _set_static_font_names(instance, family, style)
+    instance.save(str(target))
+
+
+def _set_static_font_names(font, family: str, style: str) -> None:
+    full = family if style == "Regular" else f"{family} {style}"
+    postscript = re.sub(r"[^A-Za-z0-9-]+", "", full) or full.replace(" ", "")
+    values = {
+        1: family,
+        2: style,
+        4: full,
+        6: postscript,
+        17: style,
+    }
+    font["name"].names = [
+        record for record in font["name"].names if record.nameID not in values
+    ]
+    for name_id, value in values.items():
+        font["name"].setName(value, name_id, 3, 1, 0x409)
+        font["name"].setName(value, name_id, 1, 0, 0)
+
+
 _INSTALLED_CACHE: Optional[List[str]] = None
 
 
@@ -161,7 +346,7 @@ def installed_font_families() -> List[str]:
     if _INSTALLED_CACHE is not None:
         return list(_INSTALLED_CACHE)
     families: set = set()
-    for d in _system_font_dirs():
+    for d in system_font_dirs():
         for pattern in _FONT_EXTENSIONS:
             for path in d.glob(pattern):
                 try:
