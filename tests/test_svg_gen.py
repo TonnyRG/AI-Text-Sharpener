@@ -46,6 +46,9 @@ def test_generate_svg_adds_letter_spacing():
 
 
 def test_generate_svg_adds_span_font_family():
+    """Mixed-family spans are emitted as separate <text> elements to work
+    around resvg's failure to render alternating font-families inside one
+    <text>/<tspan> group."""
     texts = [
         TextElement(
             x=100, y=100, text="2026 年",
@@ -59,5 +62,30 @@ def test_generate_svg_adds_span_font_family():
 
     svg = generate_svg(width=200, height=100, background_b64="x", texts=texts)
 
-    assert '<tspan font-family="Times New Roman">2026</tspan>' in svg
-    assert '<tspan font-family="Noto Sans SC"> 年</tspan>' in svg
+    # Each family ends up on its own <text> element.
+    assert svg.count('<text ') == 2
+    times_runs = re.findall(r'<text[^>]*font-family="Times New Roman"[^>]*>2026</text>', svg)
+    yahei_runs = re.findall(r'<text[^>]*font-family="Noto Sans SC"[^>]*> 年</text>', svg)
+    assert len(times_runs) == 1
+    assert len(yahei_runs) == 1
+    # Both are anchored at start (we pre-compute x) so resvg renders correctly.
+    assert 'text-anchor="start"' in times_runs[0]
+    assert 'text-anchor="start"' in yahei_runs[0]
+
+
+def test_generate_svg_uses_tspans_when_family_uniform():
+    """When all spans share the same font-family, keep the compact
+    single-text + tspans output."""
+    texts = [
+        TextElement(
+            x=100, y=100, text="ABC", font_family="Arial", font_size_px=20,
+            color=(0, 0, 0), spans=[
+                TextSpan(text="A", color=(255, 0, 0)),
+                TextSpan(text="B", font_weight="bold"),
+                TextSpan(text="C"),
+            ],
+        )
+    ]
+    svg = generate_svg(width=200, height=100, background_b64="x", texts=texts)
+    assert svg.count('<text ') == 1
+    assert '<tspan' in svg
