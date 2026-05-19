@@ -110,6 +110,22 @@ EDITOR_HTML = r"""<!doctype html>
     }
     .export-opt input { margin: 0; }
 
+    .export-path {
+      width: 240px;
+      min-width: 120px;
+      padding: 4px 8px;
+      font-size: 12px;
+      font-family: "Consolas", "Menlo", monospace;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #fff;
+      color: var(--ink);
+    }
+    .export-path:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+
     .slides-head {
       display: flex;
       align-items: center;
@@ -463,7 +479,10 @@ EDITOR_HTML = r"""<!doctype html>
         <button id="fitSizesBtn" type="button" title="Shrink any region's font-size that overflows its bbox">Fit sizes</button>
         <button id="saveBtn" class="primary" type="button">Save</button>
         <button id="renderBtn" type="button">Render</button>
+        <button id="importPptBtn" type="button" title="Import a PowerPoint deck: each slide becomes a project page (runs OCR + analysis on every slide; can take minutes)">Import PPT</button>
+        <input id="importPptFile" type="file" accept=".pptx,.ppt" style="display:none">
         <button id="exportPptBtn" type="button" title="Export the whole project as a flat-image PPTX">Export PPT</button>
+        <input id="exportPptPath" type="text" class="export-path" placeholder="(default: <project>_export.pptx)" title="Output PPTX path. Leave empty to use the project's default location.">
         <label class="export-opt" title="Downsample slides to <=3840px wide and re-encode as JPEG q=92 before embedding. ~17x smaller deck with no visible loss at projector resolutions. Off keeps original 8000x4500 PNG (much larger file).">
           <input id="exportCompressChk" type="checkbox" checked>
           Compress
@@ -1187,11 +1206,15 @@ EDITOR_HTML = r"""<!doctype html>
 
     async function exportPpt() {
       const compress = document.getElementById('exportCompressChk').checked;
+      const pathInput = document.getElementById('exportPptPath');
+      const path = (pathInput.value || '').trim();
       setStatus(compress ? 'Exporting PPTX (compressed)' : 'Exporting PPTX (original size)');
+      const payload = { compress };
+      if (path) payload.path = path;
       const res = await fetch('/api/export-ppt', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ compress }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1199,6 +1222,34 @@ EDITOR_HTML = r"""<!doctype html>
         return;
       }
       setStatus(`PPTX -> ${data.output || 'done'}`);
+      if (data.output) pathInput.value = data.output;
+    }
+
+    async function importPpt(file) {
+      if (!file) return;
+      setStatus(`Importing ${file.name} (this can take minutes)`);
+      try {
+        const buffer = await file.arrayBuffer();
+        const res = await fetch('/api/import-ppt', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/octet-stream',
+            'X-Filename': encodeURIComponent(file.name),
+          },
+          body: buffer,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setStatus(data.error || 'PPT import failed');
+          return;
+        }
+        setStatus(`Imported ${data.slide_count} slides -> ${data.project_path}`);
+        const exportPathInput = document.getElementById('exportPptPath');
+        if (exportPathInput) delete exportPathInput.dataset.userEdited;
+        await load(null);
+      } catch (err) {
+        setStatus('PPT import failed: ' + err.message);
+      }
     }
 
     async function loadFonts() {
@@ -1256,6 +1307,10 @@ EDITOR_HTML = r"""<!doctype html>
         redoStacks[activeSlideId] = [];
       }
       lastHistoryTime = 0; lastHistoryKey = null;
+      const exportPathInput = document.getElementById('exportPptPath');
+      if (exportPathInput && !exportPathInput.dataset.userEdited) {
+        exportPathInput.value = state.default_export_pptx || '';
+      }
       renderBtn.disabled = !state.output_png;
       image = new Image();
       image.onload = () => {
@@ -1808,6 +1863,17 @@ EDITOR_HTML = r"""<!doctype html>
       syncSelected();
     });
     document.getElementById('exportPptBtn').addEventListener('click', exportPpt);
+    document.getElementById('importPptBtn').addEventListener('click', () => {
+      document.getElementById('importPptFile').click();
+    });
+    document.getElementById('importPptFile').addEventListener('change', (evt) => {
+      const file = evt.target.files && evt.target.files[0];
+      evt.target.value = '';
+      importPpt(file);
+    });
+    document.getElementById('exportPptPath').addEventListener('input', (evt) => {
+      evt.target.dataset.userEdited = '1';
+    });
     document.addEventListener('keydown', (evt) => {
       if (!(evt.ctrlKey || evt.metaKey)) return;
       const k = evt.key.toLowerCase();
@@ -1872,7 +1938,7 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
         review_path: Optional[Path],
         output_png: Optional[Path],
         output_svg: Optional[Path],
-        project_path: Optional[Path],
+        state: dict,
         font_spec: FontSpec = DEFAULT_FONT_SPEC,
         fonts_dir: Path = DEFAULT_FONTS_DIR,
         **kwargs,
@@ -1881,10 +1947,18 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
         self.review_path = review_path
         self.output_png = output_png
         self.output_svg = output_svg or (output_png.with_suffix(".svg") if output_png else None)
-        self.project_path = project_path
+        self._state = state
         self.font_spec = font_spec
         self.fonts_dir = fonts_dir
         super().__init__(*args, **kwargs)
+
+    @property
+    def project_path(self) -> Optional[Path]:
+        return self._state.get("project_path")
+
+    @project_path.setter
+    def project_path(self, value: Optional[Path]) -> None:
+        self._state["project_path"] = value
 
     def log_message(self, format: str, *args) -> None:
         return
@@ -1938,6 +2012,11 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
             return None
         return self._resolve_item_path(item, item.output_svg)
 
+    def _default_export_pptx(self) -> Optional[Path]:
+        if self.project_path is None:
+            return None
+        return self.project_path.parent / (self.project_path.stem + "_export.pptx")
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/":
@@ -1954,6 +2033,8 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
             review["output_svg"] = str(output_svg) if output_svg else ""
             review["active_slide_id"] = item.id
             review["slides"] = [slide.to_dict() for slide in self._items()]
+            review["default_export_pptx"] = str(self._default_export_pptx()) if self.project_path else ""
+            review["project_path"] = str(self.project_path) if self.project_path else ""
             self._send_json(review)
         elif parsed.path == "/image":
             item = self._item_for_request(parsed)
@@ -2070,13 +2151,22 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
                 return
             body = self._drain_body()
             compress = True
+            custom_path: Optional[str] = None
             if body:
                 try:
                     payload = json.loads(body.decode("utf-8-sig"))
                     compress = bool(payload.get("compress", True))
+                    raw_path = payload.get("path")
+                    if isinstance(raw_path, str) and raw_path.strip():
+                        custom_path = raw_path.strip()
                 except (json.JSONDecodeError, AttributeError):
                     pass
-            output = self.project_path.parent / (self.project_path.stem + "_export.pptx")
+            if custom_path is not None:
+                output = Path(custom_path).expanduser()
+                if output.suffix.lower() != ".pptx":
+                    output = output.with_suffix(".pptx")
+            else:
+                output = self._default_export_pptx()
             export_kwargs = {} if compress else {"max_width_px": 0}
             try:
                 for item in load_review_project(self.project_path).items:
@@ -2086,12 +2176,54 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=500)
                 return
             self._send_json({"ok": True, "output": str(result)})
+        elif parsed.path == "/api/import-ppt":
+            self._handle_import_ppt()
         else:
             self._send_json({"error": "Not found"}, status=404)
 
     def _drain_body(self) -> bytes:
         length = int(self.headers.get("content-length", "0"))
         return self.rfile.read(length) if length else b""
+
+    def _handle_import_ppt(self) -> None:
+        """Receive a raw .pptx upload (filename via X-Filename header) and build a project."""
+        from urllib.parse import unquote
+        from .ppt_import import create_ppt_review_project
+
+        raw_name = self.headers.get("X-Filename", "")
+        original_name = unquote(raw_name) if raw_name else "imported.pptx"
+        stem = Path(original_name).stem or "imported"
+        body = self._drain_body()
+        if not body:
+            self._send_json({"error": "No PPT data received"}, status=400)
+            return
+
+        base_dir = Path.cwd() / "examples" / "ppt_reviews"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = base_dir / stem
+        suffix = 2
+        while output_dir.exists():
+            output_dir = base_dir / f"{stem}_{suffix}"
+            suffix += 1
+        output_dir.mkdir(parents=True)
+
+        ppt_target = output_dir / f"{stem}.pptx"
+        ppt_target.write_bytes(body)
+
+        try:
+            project_path = create_ppt_review_project(
+                ppt_target, output_dir, self.font_spec,
+            )
+        except Exception as exc:
+            self._send_json({"error": f"Import failed: {exc}"}, status=500)
+            return
+
+        self.project_path = project_path  # updates the shared state
+        self._send_json({
+            "ok": True,
+            "project_path": str(project_path),
+            "slide_count": len(load_review_project(project_path).items),
+        })
 
     def _render_if_stale(self, item: ReviewProjectItem, force: bool = False) -> bool:
         """Re-render the slide's PNG if it's missing or older than the review JSON.
@@ -2201,13 +2333,14 @@ def make_server(
     project_path: Optional[Path] = None,
     fonts_dir: Path = DEFAULT_FONTS_DIR,
 ) -> ThreadingHTTPServer:
+    state = {"project_path": project_path}
     handler = partial(
         ReviewEditorHandler,
         image_path=image_path,
         review_path=review_path,
         output_png=output_png,
         output_svg=output_svg,
-        project_path=project_path,
+        state=state,
         fonts_dir=fonts_dir,
     )
     return ThreadingHTTPServer((host, port), handler)
