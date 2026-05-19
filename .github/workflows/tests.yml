@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install non-Paddle deps
+        run: |
+          python -m pip install --upgrade pip
+          # Skip paddlepaddle / paddleocr in CI — model downloads + native deps
+          # are too heavy for a public CI runner. Tests that touch detect.py
+          # are skipped via the marker below.
+          pip install pillow opencv-python numpy resvg-py click python-pptx pytest pytest-cov
+          pip install -e . --no-deps
+      - name: Run unit tests (skip OCR-dependent)
+        env:
+          PYTHONIOENCODING: utf-8
+        run: pytest --deselect tests/test_detect.py -v
