@@ -99,6 +99,17 @@ EDITOR_HTML = r"""<!doctype html>
 
     .toolbar .spacer { flex: 1; }
 
+    .export-opt {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      user-select: none;
+      cursor: pointer;
+    }
+    .export-opt input { margin: 0; }
+
     .slides-head {
       display: flex;
       align-items: center;
@@ -453,6 +464,10 @@ EDITOR_HTML = r"""<!doctype html>
         <button id="saveBtn" class="primary" type="button">Save</button>
         <button id="renderBtn" type="button">Render</button>
         <button id="exportPptBtn" type="button" title="Export the whole project as a flat-image PPTX">Export PPT</button>
+        <label class="export-opt" title="Downsample slides to <=3840px wide and re-encode as JPEG q=92 before embedding. ~17x smaller deck with no visible loss at projector resolutions. Off keeps original 8000x4500 PNG (much larger file).">
+          <input id="exportCompressChk" type="checkbox" checked>
+          Compress
+        </label>
         <div id="status" class="status">Loading</div>
       </div>
       <div class="canvas-wrap" id="canvasWrap">
@@ -1171,11 +1186,12 @@ EDITOR_HTML = r"""<!doctype html>
     }
 
     async function exportPpt() {
-      setStatus('Exporting PPTX');
+      const compress = document.getElementById('exportCompressChk').checked;
+      setStatus(compress ? 'Exporting PPTX (compressed)' : 'Exporting PPTX (original size)');
       const res = await fetch('/api/export-ppt', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: '{}',
+        body: JSON.stringify({ compress }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -2052,12 +2068,20 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
                     status=400,
                 )
                 return
-            self._drain_body()
+            body = self._drain_body()
+            compress = True
+            if body:
+                try:
+                    payload = json.loads(body.decode("utf-8-sig"))
+                    compress = bool(payload.get("compress", True))
+                except (json.JSONDecodeError, AttributeError):
+                    pass
             output = self.project_path.parent / (self.project_path.stem + "_export.pptx")
+            export_kwargs = {} if compress else {"max_width_px": 0}
             try:
                 for item in load_review_project(self.project_path).items:
                     self._render_if_stale(item, force=True)
-                result = export_project_to_pptx(self.project_path, output)
+                result = export_project_to_pptx(self.project_path, output, **export_kwargs)
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=500)
                 return
