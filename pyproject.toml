@@ -13,6 +13,8 @@ dependencies = [
     "numpy>=1.26.0",
     "resvg-py>=0.1.0",
     "click>=8.1.0",
+    "python-pptx>=0.6.21",
+    "pywin32>=306; platform_system == 'Windows'",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +22,9 @@ dev = ["pytest>=8.0.0", "pytest-cov>=4.1.0"]
 
 [project.scripts]
 ai-text-sharpener = "ai_text_sharpener.cli:main"
+ai-text-sharpener-editor = "ai_text_sharpener.editor:main"
+ai-text-sharpener-ppt = "ai_text_sharpener.ppt_import:main"
+ai-text-sharpener-ppt-export = "ai_text_sharpener.ppt_export:main"
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -19,6 +19,7 @@ dist/
 *.log
 .idea/
 .vscode/
+.claude/
 
 // Pipeline outputs (large, regeneratable)
 scripts/debug_erased.png
@@ -27,7 +28,11 @@ scripts/out_*.svg
 examples/before_after/*.png
 examples/before_after/*.svg
 examples/before_after/*.jpg
+examples/before_after/*.pptx
 tests/fixtures/output/
+
+// User-imported fonts (often huge .ttc files; per-machine asset)
+fonts/
 
 // Per-machine test artifacts
 test_*.png

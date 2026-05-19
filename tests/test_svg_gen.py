@@ -35,3 +35,11 @@ def test_text_x_is_center_anchored():
                          font_size_px=20, color=(0, 0, 0), font_weight="normal")]
     svg = generate_svg(width=800, height=600, background_b64="x", texts=texts)
     assert 'text-anchor="middle"' in svg
+
+
+def test_generate_svg_adds_letter_spacing():
+    texts = [TextElement(x=100, y=100, text="ABC", font_family="Arial",
+                         font_size_px=20, color=(0, 0, 0),
+                         letter_spacing_px=2.5)]
+    svg = generate_svg(width=200, height=100, background_b64="x", texts=texts)
+    assert 'letter-spacing="2.5px"' in svg

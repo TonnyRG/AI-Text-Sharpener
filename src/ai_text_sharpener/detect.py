@@ -3,8 +3,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import List
 
-from paddleocr import PaddleOCR
-
 
 @dataclass
 class TextRegion:
@@ -14,14 +12,19 @@ class TextRegion:
 
 
 @lru_cache(maxsize=1)
-def _get_ocr() -> PaddleOCR:
+def _get_ocr():
     """Lazy-init PaddleOCR (loads ~500MB models on first call).
+
+    PaddleOCR is imported here (not at module top) so the rest of the package
+    can be loaded without PaddlePaddle installed — useful for CI on unit tests
+    that don't touch detection.
 
     Notes:
     - mkldnn disabled to avoid a paddlepaddle-3.x Windows-CPU bug
       (NotImplementedError: ConvertPirAttribute2RuntimeAttribute)
     - doc preprocessing turned off; AI-generated images are already upright
     """
+    from paddleocr import PaddleOCR
     return PaddleOCR(
         use_doc_orientation_classify=False,
         use_doc_unwarping=False,
