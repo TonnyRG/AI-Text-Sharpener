@@ -23,9 +23,16 @@ Exporter = Callable[[Path, Path], List[Path]]
 
 
 def export_ppt_slides_with_powerpoint(ppt_path: Path, slides_dir: Path) -> List[Path]:
-    """Export each slide to a JPG using Microsoft PowerPoint COM automation."""
+    """Export each slide to a JPG using Microsoft PowerPoint COM automation.
+
+    Initializes COM for the calling thread; required when invoked from an HTTP
+    worker thread (the editor's ThreadingHTTPServer).  CLI main-thread callers
+    would have COM auto-initialized by win32com, but it's harmless to call
+    CoInitialize on a thread that already has it — it just bumps the refcount.
+    """
     try:
         import win32com.client  # type: ignore[import-not-found]
+        import pythoncom  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError(
             "PPT import on Windows requires pywin32. "
@@ -36,34 +43,38 @@ def export_ppt_slides_with_powerpoint(ppt_path: Path, slides_dir: Path) -> List[
     slides_dir = Path(slides_dir)
     slides_dir.mkdir(parents=True, exist_ok=True)
 
-    app = None
-    presentation = None
-    with tempfile.TemporaryDirectory(prefix="ppt_export_", dir=str(slides_dir.parent)) as tmp:
-        export_dir = Path(tmp)
-        try:
-            app = win32com.client.DispatchEx("PowerPoint.Application")
-            presentation = app.Presentations.Open(str(ppt_path), WithWindow=False)
-            presentation.Export(str(export_dir), "JPG")
-        except Exception as exc:
-            raise RuntimeError(f"PowerPoint slide export failed: {exc}") from exc
-        finally:
-            if presentation is not None:
-                presentation.Close()
-            if app is not None:
-                app.Quit()
+    pythoncom.CoInitialize()
+    try:
+        app = None
+        presentation = None
+        with tempfile.TemporaryDirectory(prefix="ppt_export_", dir=str(slides_dir.parent)) as tmp:
+            export_dir = Path(tmp)
+            try:
+                app = win32com.client.DispatchEx("PowerPoint.Application")
+                presentation = app.Presentations.Open(str(ppt_path), WithWindow=False)
+                presentation.Export(str(export_dir), "JPG")
+            except Exception as exc:
+                raise RuntimeError(f"PowerPoint slide export failed: {exc}") from exc
+            finally:
+                if presentation is not None:
+                    presentation.Close()
+                if app is not None:
+                    app.Quit()
 
-        exported = _sort_powerpoint_exports(export_dir.glob("*.jpg"))
-        if not exported:
-            exported = _sort_powerpoint_exports(export_dir.glob("*.JPG"))
-        if not exported:
-            raise RuntimeError("PowerPoint did not produce slide images")
+            exported = _sort_powerpoint_exports(export_dir.glob("*.jpg"))
+            if not exported:
+                exported = _sort_powerpoint_exports(export_dir.glob("*.JPG"))
+            if not exported:
+                raise RuntimeError("PowerPoint did not produce slide images")
 
-        slide_paths = []
-        for index, exported_path in enumerate(exported, start=1):
-            target = slides_dir / f"slide_{index:03d}.jpg"
-            shutil.copy2(exported_path, target)
-            slide_paths.append(target)
-        return slide_paths
+            slide_paths = []
+            for index, exported_path in enumerate(exported, start=1):
+                target = slides_dir / f"slide_{index:03d}.jpg"
+                shutil.copy2(exported_path, target)
+                slide_paths.append(target)
+            return slide_paths
+    finally:
+        pythoncom.CoUninitialize()
 
 
 def create_ppt_review_project(
