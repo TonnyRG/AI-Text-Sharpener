@@ -111,9 +111,8 @@ EDITOR_HTML = r"""<!doctype html>
     .export-opt input { margin: 0; }
 
     .export-path {
-      width: 240px;
-      min-width: 120px;
-      padding: 4px 8px;
+      width: 100%;
+      padding: 6px 8px;
       font-size: 12px;
       font-family: "Consolas", "Menlo", monospace;
       border: 1px solid var(--line);
@@ -124,6 +123,44 @@ EDITOR_HTML = r"""<!doctype html>
     .export-path:focus {
       outline: 2px solid var(--accent);
       outline-offset: -2px;
+    }
+
+    .file-menu { position: relative; display: inline-block; }
+    .file-menu-panel {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      min-width: 320px;
+      padding: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .file-menu-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .file-menu-section:last-child { border-bottom: 0; padding-bottom: 0; }
+    .file-menu-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .file-menu-hint {
+      margin: 0;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
     }
 
     .slides-head {
@@ -479,14 +516,25 @@ EDITOR_HTML = r"""<!doctype html>
         <button id="fitSizesBtn" type="button" title="Shrink any region's font-size that overflows its bbox">Fit sizes</button>
         <button id="saveBtn" class="primary" type="button">Save</button>
         <button id="renderBtn" type="button">Render</button>
-        <button id="importPptBtn" type="button" title="Import a PowerPoint deck: each slide becomes a project page (runs OCR + analysis on every slide; can take minutes)">Import PPT</button>
+        <div class="file-menu">
+          <button id="fileMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Import / Export project files">File ▾</button>
+          <div id="fileMenuPanel" class="file-menu-panel" hidden>
+            <div class="file-menu-section">
+              <button id="importPptBtn" type="button" title="Pick a .pptx file; each slide becomes a project page (runs OCR on every slide; can take minutes).">Import PPT…</button>
+              <p class="file-menu-hint">Needs Microsoft PowerPoint installed locally.</p>
+            </div>
+            <div class="file-menu-section">
+              <label class="file-menu-label" for="exportPptPath">Export PPT to</label>
+              <input id="exportPptPath" type="text" class="export-path" placeholder="(default: &lt;project&gt;_export.pptx)" title="Output PPTX path. Leave empty to use the project's default location.">
+              <label class="export-opt" title="Downsample slides to <=3840px wide and re-encode as JPEG q=92 before embedding. ~17x smaller deck with no visible loss at projector resolutions. Off keeps original 8000x4500 PNG (much larger file).">
+                <input id="exportCompressChk" type="checkbox" checked>
+                Compress slide images (recommended)
+              </label>
+              <button id="exportPptBtn" class="primary" type="button">Export PPT</button>
+            </div>
+          </div>
+        </div>
         <input id="importPptFile" type="file" accept=".pptx,.ppt" style="display:none">
-        <button id="exportPptBtn" type="button" title="Export the whole project as a flat-image PPTX">Export PPT</button>
-        <input id="exportPptPath" type="text" class="export-path" placeholder="(default: <project>_export.pptx)" title="Output PPTX path. Leave empty to use the project's default location.">
-        <label class="export-opt" title="Downsample slides to <=3840px wide and re-encode as JPEG q=92 before embedding. ~17x smaller deck with no visible loss at projector resolutions. Off keeps original 8000x4500 PNG (much larger file).">
-          <input id="exportCompressChk" type="checkbox" checked>
-          Compress
-        </label>
         <div id="status" class="status">Loading</div>
       </div>
       <div class="canvas-wrap" id="canvasWrap">
@@ -1208,6 +1256,8 @@ EDITOR_HTML = r"""<!doctype html>
       const compress = document.getElementById('exportCompressChk').checked;
       const pathInput = document.getElementById('exportPptPath');
       const path = (pathInput.value || '').trim();
+      const panel = document.getElementById('fileMenuPanel');
+      if (panel) panel.hidden = true;
       setStatus(compress ? 'Exporting PPTX (compressed)' : 'Exporting PPTX (original size)');
       const payload = { compress };
       if (path) payload.path = path;
@@ -1873,6 +1923,22 @@ EDITOR_HTML = r"""<!doctype html>
     });
     document.getElementById('exportPptPath').addEventListener('input', (evt) => {
       evt.target.dataset.userEdited = '1';
+    });
+
+    const fileMenuBtn = document.getElementById('fileMenuBtn');
+    const fileMenuPanel = document.getElementById('fileMenuPanel');
+    function setFileMenuOpen(open) {
+      fileMenuPanel.hidden = !open;
+      fileMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    fileMenuBtn.addEventListener('click', (evt) => {
+      evt.stopPropagation();
+      setFileMenuOpen(fileMenuPanel.hidden);
+    });
+    fileMenuPanel.addEventListener('click', (evt) => evt.stopPropagation());
+    document.addEventListener('click', () => setFileMenuOpen(false));
+    document.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Escape' && !fileMenuPanel.hidden) setFileMenuOpen(false);
     });
     document.addEventListener('keydown', (evt) => {
       if (!(evt.ctrlKey || evt.metaKey)) return;
