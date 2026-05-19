@@ -1080,7 +1080,20 @@ EDITOR_HTML = r"""<!doctype html>
           <span class="region-state">${region.replace ? 'on' : 'off'}</span>
         `;
         row.querySelector('.region-text').textContent = region.text || region.original_text || '';
-        row.addEventListener('click', () => selectRegion(region.id));
+        row.addEventListener('click', (evt) => {
+          if (evt.shiftKey) {
+            if (selectedIds.has(region.id)) selectedIds.delete(region.id);
+            else selectedIds.add(region.id);
+            if (!selectedIds.has(selectedId)) {
+              selectedId = selectedIds.size ? [...selectedIds][0] : null;
+            }
+            if (selectedId) selectRegion(selectedId);
+            else { renderList(); draw(); }
+          } else {
+            selectedIds = new Set([region.id]);
+            selectRegion(region.id);
+          }
+        });
         listEl.appendChild(row);
       }
     }
