@@ -143,6 +143,7 @@ EDITOR_HTML = r"""<!doctype html>
       flex-direction: column;
       gap: 12px;
     }
+    .file-menu-panel[hidden] { display: none; }
     .file-menu-section {
       display: flex;
       flex-direction: column;
@@ -1355,8 +1356,6 @@ EDITOR_HTML = r"""<!doctype html>
           return;
         }
         setStatus(`Imported ${data.slide_count} slides -> ${data.project_path}`);
-        const exportPathInput = document.getElementById('exportPptPath');
-        if (exportPathInput) delete exportPathInput.dataset.userEdited;
         await load(null);
       } catch (err) {
         setStatus('PPT import failed: ' + err.message);
