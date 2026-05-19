@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import os
+import tempfile
 import webbrowser
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -524,13 +526,13 @@ EDITOR_HTML = r"""<!doctype html>
               <p class="file-menu-hint">Needs Microsoft PowerPoint installed locally.</p>
             </div>
             <div class="file-menu-section">
-              <label class="file-menu-label" for="exportPptPath">Export PPT to</label>
-              <input id="exportPptPath" type="text" class="export-path" placeholder="(default: &lt;project&gt;_export.pptx)" title="Output PPTX path. Leave empty to use the project's default location.">
+              <label class="file-menu-label">Export PPT</label>
               <label class="export-opt" title="Downsample slides to <=3840px wide and re-encode as JPEG q=92 before embedding. ~17x smaller deck with no visible loss at projector resolutions. Off keeps original 8000x4500 PNG (much larger file).">
                 <input id="exportCompressChk" type="checkbox" checked>
                 Compress slide images (recommended)
               </label>
-              <button id="exportPptBtn" class="primary" type="button">Export PPT</button>
+              <button id="exportPptBtn" class="primary" type="button">Export PPT…</button>
+              <p class="file-menu-hint" id="exportPptHint">Opens a "Save As" dialog so you can pick the file name and folder.</p>
             </div>
           </div>
         </div>
@@ -1252,27 +1254,86 @@ EDITOR_HTML = r"""<!doctype html>
       await load(activeSlideId);
     }
 
+    function defaultExportName() {
+      const fromState = state && state.default_export_pptx;
+      if (fromState) {
+        const parts = String(fromState).split(/[\\\/]/);
+        return parts[parts.length - 1] || 'export.pptx';
+      }
+      return 'export.pptx';
+    }
+
     async function exportPpt() {
       const compress = document.getElementById('exportCompressChk').checked;
-      const pathInput = document.getElementById('exportPptPath');
-      const path = (pathInput.value || '').trim();
       const panel = document.getElementById('fileMenuPanel');
+
+      let fileHandle = null;
+      if (window.showSaveFilePicker) {
+        try {
+          fileHandle = await window.showSaveFilePicker({
+            suggestedName: defaultExportName(),
+            types: [{
+              description: 'PowerPoint Presentation',
+              accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
+            }],
+          });
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+          // Other errors: fall through to fallback download path
+        }
+      }
+
       if (panel) panel.hidden = true;
-      setStatus(compress ? 'Exporting PPTX (compressed)' : 'Exporting PPTX (original size)');
-      const payload = { compress };
-      if (path) payload.path = path;
-      const res = await fetch('/api/export-ppt', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setStatus(data.error || 'PPTX export failed');
+      setStatus(compress ? 'Exporting PPTX (compressed)…' : 'Exporting PPTX (original size)…');
+
+      if (fileHandle) {
+        try {
+          const res = await fetch('/api/export-ppt', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ compress, download: true }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            setStatus(data.error || 'PPTX export failed');
+            return;
+          }
+          const blob = await res.blob();
+          const writable = await fileHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          setStatus(`PPTX saved: ${fileHandle.name}`);
+        } catch (err) {
+          setStatus('PPTX export failed: ' + err.message);
+        }
         return;
       }
-      setStatus(`PPTX -> ${data.output || 'done'}`);
-      if (data.output) pathInput.value = data.output;
+
+      // Fallback for browsers without File System Access API: trigger a download.
+      try {
+        const res = await fetch('/api/export-ppt', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ compress, download: true }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setStatus(data.error || 'PPTX export failed');
+          return;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = defaultExportName();
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setStatus(`PPTX downloaded as ${a.download}`);
+      } catch (err) {
+        setStatus('PPTX export failed: ' + err.message);
+      }
     }
 
     async function importPpt(file) {
@@ -1357,10 +1418,6 @@ EDITOR_HTML = r"""<!doctype html>
         redoStacks[activeSlideId] = [];
       }
       lastHistoryTime = 0; lastHistoryKey = null;
-      const exportPathInput = document.getElementById('exportPptPath');
-      if (exportPathInput && !exportPathInput.dataset.userEdited) {
-        exportPathInput.value = state.default_export_pptx || '';
-      }
       renderBtn.disabled = !state.output_png;
       image = new Image();
       image.onload = () => {
@@ -1921,10 +1978,6 @@ EDITOR_HTML = r"""<!doctype html>
       evt.target.value = '';
       importPpt(file);
     });
-    document.getElementById('exportPptPath').addEventListener('input', (evt) => {
-      evt.target.dataset.userEdited = '1';
-    });
-
     const fileMenuBtn = document.getElementById('fileMenuBtn');
     const fileMenuPanel = document.getElementById('fileMenuPanel');
     function setFileMenuOpen(open) {
@@ -1935,8 +1988,13 @@ EDITOR_HTML = r"""<!doctype html>
       evt.stopPropagation();
       setFileMenuOpen(fileMenuPanel.hidden);
     });
-    fileMenuPanel.addEventListener('click', (evt) => evt.stopPropagation());
-    document.addEventListener('click', () => setFileMenuOpen(false));
+    // Capture-phase outside-click handler so descendant stopPropagation()
+    // calls don't keep the menu stuck open.
+    document.addEventListener('pointerdown', (evt) => {
+      if (fileMenuPanel.hidden) return;
+      if (fileMenuPanel.contains(evt.target) || fileMenuBtn.contains(evt.target)) return;
+      setFileMenuOpen(false);
+    }, true);
     document.addEventListener('keydown', (evt) => {
       if (evt.key === 'Escape' && !fileMenuPanel.hidden) setFileMenuOpen(false);
     });
@@ -2217,26 +2275,42 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
                 return
             body = self._drain_body()
             compress = True
-            custom_path: Optional[str] = None
+            download = False
             if body:
                 try:
                     payload = json.loads(body.decode("utf-8-sig"))
                     compress = bool(payload.get("compress", True))
-                    raw_path = payload.get("path")
-                    if isinstance(raw_path, str) and raw_path.strip():
-                        custom_path = raw_path.strip()
+                    download = bool(payload.get("download", False))
                 except (json.JSONDecodeError, AttributeError):
                     pass
-            if custom_path is not None:
-                output = Path(custom_path).expanduser()
-                if output.suffix.lower() != ".pptx":
-                    output = output.with_suffix(".pptx")
-            else:
-                output = self._default_export_pptx()
             export_kwargs = {} if compress else {"max_width_px": 0}
             try:
                 for item in load_review_project(self.project_path).items:
                     self._render_if_stale(item, force=True)
+                if download:
+                    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".pptx", prefix="ats_export_")
+                    os.close(tmp_fd)
+                    tmp_path = Path(tmp_name)
+                    try:
+                        export_project_to_pptx(self.project_path, tmp_path, **export_kwargs)
+                        data = tmp_path.read_bytes()
+                    finally:
+                        tmp_path.unlink(missing_ok=True)
+                    filename = self._default_export_pptx().name
+                    self.send_response(200)
+                    self.send_header(
+                        "content-type",
+                        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    )
+                    self.send_header("content-length", str(len(data)))
+                    self.send_header(
+                        "content-disposition",
+                        f'attachment; filename="{filename}"',
+                    )
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+                output = self._default_export_pptx()
                 result = export_project_to_pptx(self.project_path, output, **export_kwargs)
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=500)
