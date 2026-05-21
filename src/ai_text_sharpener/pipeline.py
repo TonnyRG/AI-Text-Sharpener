@@ -88,8 +88,8 @@ def auto_align_left_groups(
 def analyze_image(
     input_path: Path,
     font_spec: FontSpec,
-    min_height_ratio: float = 0.025,
-    min_height_px_cap: int = 50,
+    min_height_ratio: float = 0.020,
+    min_height_px_cap: int = 30,
     max_font_ratio: float = 0.05,
 ) -> ReviewDocument:
     """Detect text and return an editable replacement plan."""
@@ -101,9 +101,10 @@ def analyze_image(
     if not regions:
         raise RuntimeError(f"No text detected in {input_path}")
 
-    # min_height_ratio was calibrated for ~1080p (27px). For high-res images (8000px+)
-    # the threshold balloons to 112px, silently dropping bullet-point text (~60px).
-    # Cap prevents this while keeping the crests-are-too-small behaviour on normal images.
+    # Filter out decorative tiny text (logos, crests).  Original ratio of 0.025
+    # was calibrated for ~1080p — at 4500px that gives 112px, dropping body
+    # bullets (~60–100px).  Cap is the safety ceiling on the ratio.  Lowered
+    # cap from 50 → 30 to keep bullet text on 4K PPT exports (~44px tall).
     min_h = min(h * min_height_ratio, min_height_px_cap)
     regions = [r for r in regions if (bbox_to_rect(r.bbox)[3]) >= min_h]
     if not regions:

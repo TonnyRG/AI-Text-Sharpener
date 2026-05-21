@@ -22,8 +22,20 @@ Renderer = Callable[[Path, Path, Path, ReviewDocument], None]
 Exporter = Callable[[Path, Path], List[Path]]
 
 
-def export_ppt_slides_with_powerpoint(ppt_path: Path, slides_dir: Path) -> List[Path]:
+DEFAULT_EXPORT_LONG_SIDE_PX = 4000  # ~300 DPI for a 13.3" widescreen slide
+
+
+def export_ppt_slides_with_powerpoint(
+    ppt_path: Path,
+    slides_dir: Path,
+    long_side_px: int = DEFAULT_EXPORT_LONG_SIDE_PX,
+) -> List[Path]:
     """Export each slide to a JPG using Microsoft PowerPoint COM automation.
+
+    ``long_side_px`` controls the export resolution; PowerPoint's default
+    (~960px wide) is too coarse for OCR on detailed slides.  We request a
+    pixel size where the slide's long edge ≈ ``long_side_px`` so small body
+    text remains crisp enough for PaddleOCR.
 
     Initializes COM for the calling thread; required when invoked from an HTTP
     worker thread (the editor's ThreadingHTTPServer).  CLI main-thread callers
@@ -48,11 +60,22 @@ def export_ppt_slides_with_powerpoint(ppt_path: Path, slides_dir: Path) -> List[
         app = None
         presentation = None
         with tempfile.TemporaryDirectory(prefix="ppt_export_", dir=str(slides_dir.parent)) as tmp:
-            export_dir = Path(tmp)
+            # PowerPoint's Export() interprets relative paths against its own
+            # working directory (usually My Documents), so the JPGs land
+            # outside our temp dir.  Resolve to absolute up-front.
+            export_dir = Path(tmp).resolve()
             try:
                 app = win32com.client.DispatchEx("PowerPoint.Application")
                 presentation = app.Presentations.Open(str(ppt_path), WithWindow=False)
-                presentation.Export(str(export_dir), "JPG")
+                # Compute pixel size so the slide's long side ≈ long_side_px.
+                # PageSetup.SlideWidth/Height are in points (1 pt = 1/72 inch).
+                slide_w_pt = presentation.PageSetup.SlideWidth
+                slide_h_pt = presentation.PageSetup.SlideHeight
+                long_pt = max(slide_w_pt, slide_h_pt) or 720
+                scale = long_side_px / long_pt
+                scale_w = int(round(slide_w_pt * scale))
+                scale_h = int(round(slide_h_pt * scale))
+                presentation.Export(str(export_dir), "JPG", scale_w, scale_h)
             except Exception as exc:
                 raise RuntimeError(f"PowerPoint slide export failed: {exc}") from exc
             finally:
