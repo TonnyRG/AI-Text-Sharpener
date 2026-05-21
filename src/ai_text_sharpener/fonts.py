@@ -2,6 +2,7 @@
 import os
 import platform
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -199,6 +200,20 @@ def prepare_render_font_dirs(
 
 
 _VARIABLE_FONT_CACHE: dict[str, Optional[Path]] = {}
+_FONTTOOLS_WARNING_SHOWN = False
+
+
+def _warn_missing_fonttools_once() -> None:
+    global _FONTTOOLS_WARNING_SHOWN
+    if _FONTTOOLS_WARNING_SHOWN:
+        return
+    _FONTTOOLS_WARNING_SHOWN = True
+    sys.stderr.write(
+        "[ai-text-sharpener] fontTools is not installed; variable CJK fonts "
+        "such as 'Noto Serif SC' will fall back to their default instance "
+        "(often ExtraLight) on export and may render with the wrong weight. "
+        "Install with: pip install 'fonttools>=4.50'\n"
+    )
 
 
 def _ensure_static_weight_fonts(
@@ -235,6 +250,12 @@ def _find_weight_variable_font(family: str, search_dirs: List[Path]) -> Optional
     key = family.lower()
     if key in _VARIABLE_FONT_CACHE:
         return _VARIABLE_FONT_CACHE[key]
+    try:
+        import fontTools.ttLib  # noqa: F401 - probe availability once
+    except ImportError:
+        _warn_missing_fonttools_once()
+        _VARIABLE_FONT_CACHE[key] = None
+        return None
     for directory in search_dirs:
         if not directory.exists():
             continue
