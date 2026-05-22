@@ -42,4 +42,6 @@ def test_cli_renders_from_review_json(tmp_path):
     assert result.exit_code == 0
     assert out_png.exists()
     assert out_png.with_suffix(".svg").exists()
-    assert "Edited" in out_png.with_suffix(".svg").read_text(encoding="utf-8")
+    svg_text = out_png.with_suffix(".svg").read_text(encoding="utf-8")
+    # Per-glyph rendering emits one <text> per char, so check each character is present.
+    assert all(f">{c}<" in svg_text for c in "Edited")

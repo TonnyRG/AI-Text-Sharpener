@@ -99,8 +99,10 @@ def test_render_review_document_skips_disabled_regions(tmp_path):
     render_review_document(input_path, out_png, out_svg, review)
 
     svg = out_svg.read_text(encoding="utf-8")
-    assert "EDITED" in svg
-    assert "KEEP" not in svg
+    # Per-glyph rendering emits one <text> per char.
+    assert all(f">{c}<" in svg for c in "EDITED")
+    # KEEP region (replace=False) should produce no glyph for 'K' (unique to KEEP).
+    assert ">K<" not in svg
     assert out_png.exists()
 
 
