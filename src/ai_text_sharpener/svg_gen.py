@@ -27,6 +27,7 @@ class TextElement:
     letter_spacing_px: float = 0.0
     text_anchor: str = "center"  # "center" | "left" | "right"
     spans: List[TextSpan] = field(default_factory=list)
+    glyph_xs: Optional[List[int]] = None
 
 
 _SVG_ANCHOR = {"center": "middle", "left": "start", "right": "end"}
@@ -68,7 +69,36 @@ _SVG_TEMPLATE = (
 )
 
 
+def _per_glyph_tags(t: TextElement) -> str:
+    """Emit one <text> per character at its measured x.  Used when the caller
+    has measured per-glyph centers from the source image; bypassed when text
+    is empty or spans are present (spans path stays as-is in this iteration).
+    """
+    parts: List[str] = []
+    for ch, gx in zip(t.text, t.glyph_xs or []):
+        attrs = (
+            f'x="{int(gx)}" y="{t.y}" '
+            f'font-family="{escape(t.font_family)}" '
+            f'font-size="{t.font_size_px}" '
+            f'font-weight="{t.font_weight}" '
+            f'fill="rgb({t.color[0]},{t.color[1]},{t.color[2]})" '
+            f'text-anchor="middle" dominant-baseline="middle"'
+        )
+        parts.append(f'  <text {attrs}>{escape(ch)}</text>\n')
+    return "".join(parts)
+
+
 def _text_tag(t: TextElement) -> str:
+    if not t.text and not t.spans:
+        return ""
+    if (
+        t.glyph_xs is not None
+        and not t.spans
+        and t.text
+        and len(t.glyph_xs) == len(t.text)
+    ):
+        return _per_glyph_tags(t)
+
     anchor = _SVG_ANCHOR.get(t.text_anchor, "middle")
     common = (
         f'x="{t.x}" y="{t.y}" '

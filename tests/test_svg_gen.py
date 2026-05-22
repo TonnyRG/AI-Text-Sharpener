@@ -89,3 +89,54 @@ def test_generate_svg_uses_tspans_when_family_uniform():
     svg = generate_svg(width=200, height=100, background_b64="x", texts=texts)
     assert svg.count('<text ') == 1
     assert '<tspan' in svg
+
+
+def test_glyph_xs_emits_one_text_per_char():
+    t = TextElement(
+        x=100, y=50, text="ABC", font_family="Arial",
+        font_size_px=20, color=(0, 0, 0), font_weight="normal",
+        glyph_xs=[10, 50, 90],
+    )
+    svg = generate_svg(width=200, height=100, background_b64="x", texts=[t])
+    assert svg.count("<text ") == 3
+    assert 'x="10"' in svg and 'x="50"' in svg and 'x="90"' in svg
+    assert svg.count('>A<') == 1
+    assert svg.count('>B<') == 1
+    assert svg.count('>C<') == 1
+    assert svg.count('y="50"') == 3
+    assert svg.count('font-family="Arial"') == 3
+
+
+def test_glyph_xs_ignored_when_spans_present():
+    """Spans path is unchanged; per-glyph not applied to span runs in this iteration."""
+    t = TextElement(
+        x=100, y=50, text="AB", font_family="Arial",
+        font_size_px=20, color=(0, 0, 0), font_weight="normal",
+        glyph_xs=[10, 90],
+        spans=[TextSpan(text="A"), TextSpan(text="B")],
+    )
+    svg = generate_svg(width=200, height=100, background_b64="x", texts=[t])
+    assert svg.count("<text ") == 1
+    assert "<tspan" in svg
+
+
+def test_glyph_xs_length_mismatch_falls_back_to_single_text():
+    """If glyph_xs length != len(text), don't try per-glyph; render the old way."""
+    t = TextElement(
+        x=100, y=50, text="ABC", font_family="Arial",
+        font_size_px=20, color=(0, 0, 0), font_weight="normal",
+        glyph_xs=[10, 50],
+    )
+    svg = generate_svg(width=200, height=100, background_b64="x", texts=[t])
+    assert svg.count("<text ") == 1
+    assert ">ABC<" in svg
+
+
+def test_glyph_xs_empty_text_no_output():
+    t = TextElement(
+        x=100, y=50, text="", font_family="Arial",
+        font_size_px=20, color=(0, 0, 0), font_weight="normal",
+        glyph_xs=[],
+    )
+    svg = generate_svg(width=200, height=100, background_b64="x", texts=[t])
+    assert "<text " not in svg
