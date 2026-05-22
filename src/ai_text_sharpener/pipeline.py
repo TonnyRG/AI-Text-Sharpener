@@ -3,14 +3,12 @@ import base64
 import io
 from pathlib import Path
 
-import cv2
 import numpy as np
 from PIL import Image
 
 from .detect import detect_text
 from .erase import soft_erase
 from .fonts import FontSpec, assign_fonts, prepare_render_font_dirs
-from .glyph_layout import measure_glyph_centers
 from .merge import merge_horizontal_neighbors
 from .rasterize import svg_to_png
 from .review import EditableRegion, ReviewDocument
@@ -175,13 +173,8 @@ def render_review_document(
         [(region.to_text_region(), region.to_region_style()) for region in active_regions],
     )
 
-    img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    texts = []
-    for region in active_regions:
-        glyph_xs = None
-        if not region.spans and region.text:
-            glyph_xs = measure_glyph_centers(img_bgr, region.bbox, len(region.text))
-        texts.append(TextElement(
+    texts = [
+        TextElement(
             x=region.x,
             y=region.y,
             text=region.text,
@@ -191,7 +184,6 @@ def render_review_document(
             font_weight=region.font_weight,
             letter_spacing_px=region.letter_spacing_px,
             text_anchor=region.text_anchor,
-            glyph_xs=glyph_xs,
             spans=[
                 SvgSpan(
                     text=s.text,
@@ -203,7 +195,9 @@ def render_review_document(
                 )
                 for s in region.spans
             ],
-        ))
+        )
+        for region in active_regions
+    ]
 
     buf = io.BytesIO()
     Image.fromarray(erased).save(buf, format="PNG")
