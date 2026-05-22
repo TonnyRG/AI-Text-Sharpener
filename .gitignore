@@ -29,3 +29,4 @@ fonts/
 scripts/editor_current_image*.png
 scripts/image1_compare*.jpg
 scripts/image1_state_before.json
+scripts/spike_glyph_split_*.png
