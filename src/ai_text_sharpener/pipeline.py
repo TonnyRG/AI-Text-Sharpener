@@ -1,6 +1,7 @@
 """End-to-end pipeline: image -> editable plan -> PNG + SVG."""
 import base64
 import io
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -8,7 +9,7 @@ from PIL import Image
 
 from .detect import detect_text
 from .erase import soft_erase
-from .fonts import FontSpec, assign_fonts, prepare_render_font_dirs
+from .fonts import FontSpec, assign_fonts, effective_title_min_px, prepare_render_font_dirs
 from .merge import merge_horizontal_neighbors
 from .rasterize import svg_to_png
 from .review import EditableRegion, ReviewDocument
@@ -113,7 +114,8 @@ def analyze_image(
     regions = merge_horizontal_neighbors(regions)
     styled = [(r, extract_style(img, r)) for r in regions]
     sizes = [s.font_size_px for _, s in styled]
-    font_families = assign_fonts(sizes, font_spec)
+    effective_spec = replace(font_spec, title_min_px=effective_title_min_px(font_spec, h))
+    font_families = assign_fonts(sizes, effective_spec)
     font_size_cap = int(h * max_font_ratio)
 
     editable_regions = []

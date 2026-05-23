@@ -13,10 +13,21 @@ class FontSpec:
     title: str
     body: str
     title_min_px: int = 40
+    title_min_ratio: float = 0.035
 
 
 def assign_fonts(font_sizes_px: List[int], spec: FontSpec) -> List[str]:
     return [spec.title if s >= spec.title_min_px else spec.body for s in font_sizes_px]
+
+
+def effective_title_min_px(spec: FontSpec, image_height: int) -> int:
+    """Title threshold scaled to image height; never below ``spec.title_min_px``.
+
+    A fixed pixel threshold (e.g. 40) routes everything to the title font on a
+    4K-tall slide because even body text exceeds it.  Scaling by image height
+    keeps the title/body split visually consistent across resolutions.
+    """
+    return max(spec.title_min_px, int(image_height * spec.title_min_ratio))
 
 
 # Fonts that are pre-installed (or very likely installed) on modern Windows,
