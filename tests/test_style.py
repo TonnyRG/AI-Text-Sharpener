@@ -35,6 +35,20 @@ def test_sample_text_color_picks_light_strokes_on_dark_bg():
     assert sum(rgb) > 600  # close to white (765)
 
 
+def test_sample_text_color_handles_small_text_fraction_on_dark_bg():
+    """Title-bar case: tiny bright text on a big dark bar (~3% text pixels).
+
+    A pure percentile heuristic puts the cutoff inside the dark majority and the
+    median ends up roughly equal to the background. Forces use of a
+    distance-from-mean criterion with a near-max floor.
+    """
+    img = np.full((100, 200, 3), [30, 40, 80], dtype=np.uint8)  # dark navy bar
+    img[48:52, 90:110] = 255  # 4x20 = 80px of ~2400px patch ≈ 3% text
+    rect = (70, 30, 60, 40)
+    rgb = sample_text_color(img, rect)
+    assert sum(rgb) > 600, f"got {rgb}, expected near-white text color"
+
+
 def test_sample_background_color_picks_outside_border():
     img = _make_test_image()
     rect = (70, 30, 60, 40)

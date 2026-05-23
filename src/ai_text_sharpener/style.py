@@ -30,9 +30,13 @@ def sample_text_color(img: np.ndarray, rect: Rect) -> RGB:
     """Sample text color by picking the foreground pixels (those whose luminance
     is farthest from the bbox-mean luminance).
 
-    Works for both dark-on-light and light-on-dark text. The bbox is mostly
-    background pixels, so the mean luminance approximates the background;
-    foreground (text strokes) are the pixels furthest from that mean.
+    Works symmetrically for dark-on-light and light-on-dark.  Uses absolute
+    distance from the patch's mean luminance rather than a one-sided percentile,
+    and floors the cutoff at half of the max distance so that very thin text
+    (e.g. small white text on a wide dark title bar — ~3-5% of bbox area) still
+    gets picked up.  A pure percentile-only cutoff would land inside the
+    dominant background range whenever text occupies < 20% of the area, making
+    the returned color equal to the background.
     """
     x, y, w, h = rect
     patch = img[y:y+h, x:x+w]
@@ -40,14 +44,13 @@ def sample_text_color(img: np.ndarray, rect: Rect) -> RGB:
         return (0, 0, 0)
     lum = patch.mean(axis=2)
     bg_lum = lum.mean()
-    if bg_lum >= 128:
-        # Light background → text is dark: pick the darkest 20%.
-        threshold = np.percentile(lum, 20)
-        mask = lum <= threshold
-    else:
-        # Dark background → text is light: pick the brightest 20%.
-        threshold = np.percentile(lum, 80)
-        mask = lum >= threshold
+    abs_diff = np.abs(lum - bg_lum)
+    max_diff = float(abs_diff.max())
+    if max_diff < 5.0:
+        # Nearly uniform patch — no text contrast to find; return overall mean.
+        return tuple(int(c) for c in patch.reshape(-1, 3).mean(axis=0))
+    threshold = max(float(np.percentile(abs_diff, 80)), max_diff * 0.5)
+    mask = abs_diff >= threshold
     if not mask.any():
         return tuple(int(c) for c in patch.reshape(-1, 3).mean(axis=0))
     fg_pixels = patch[mask]
