@@ -1,32 +1,50 @@
+# Python
 __pycache__/
 *.pyc
 *.egg-info/
+build/
+dist/
+
+# Virtual envs
 .venv/
-ProjectAI-Text-Sharpener.venv/
+
+# Test / coverage
 .pytest_cache/
 .coverage
 htmlcov/
-build/
-dist/
 tests/fixtures/output/
-*.log
-.DS_Store
-.stfolder/
-scripts/debug_erased.png
-scripts/editor_screenshot.png
-scripts/out_*.png
-scripts/out_*.svg
-scripts/out_*.json
-examples/before_after/*.png
-examples/before_after/*.svg
-examples/before_after/*.jpg
-examples/before_after/*.json
-examples/before_after/review_queue.md
-examples/before_after/_review_sheets/
-examples/before_after/*.pptx
-fonts/
+
+# Editor / IDE
 .claude/
-scripts/editor_current_image*.png
-scripts/image1_compare*.jpg
-scripts/image1_state_before.json
-scripts/spike_glyph_split_*.png
+.DS_Store
+
+# Logs
+*.log
+
+# Syncthing
+.stfolder/
+
+# Per-machine assets (fonts that the user installs locally, often huge .ttc files)
+fonts/
+
+# Top-level scratch / diagnostic output (regeneratable)
+output/
+tmp/
+
+# Local PPT inputs + extracted assets (not part of the repo)
+PPT/
+
+# scripts/ — Python sources are committed; everything else is scratch
+scripts/__pycache__/
+scripts/*.png
+scripts/*.jpg
+scripts/*.svg
+scripts/*.json
+
+# examples/before_after — large generated assets; never committed.  Users regenerate
+# from scripts/run_all.py with their own corpus.
+examples/before_after/
+
+# examples/ppt_reviews — full review projects (slides, drafts, finals); per-project,
+# can be huge.  Don't commit; users regenerate from their own PPTs.
+examples/ppt_reviews/
