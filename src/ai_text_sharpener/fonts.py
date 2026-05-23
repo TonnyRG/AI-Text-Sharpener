@@ -13,7 +13,7 @@ class FontSpec:
     title: str
     body: str
     title_min_px: int = 40
-    title_min_ratio: float = 0.035
+    title_min_ratio: float = 0.04
 
 
 def assign_fonts(font_sizes_px: List[int], spec: FontSpec) -> List[str]:

@@ -20,15 +20,15 @@ def test_assign_fonts_threshold_inclusive():
 
 
 def test_effective_title_min_px_scales_with_image_height():
-    spec = FontSpec(title="T", body="B", title_min_px=40, title_min_ratio=0.035)
-    assert effective_title_min_px(spec, image_height=4500) == 157
+    spec = FontSpec(title="T", body="B", title_min_px=40, title_min_ratio=0.04)
+    assert effective_title_min_px(spec, image_height=4500) == 180
 
 
 def test_effective_title_min_px_floors_at_absolute():
-    spec = FontSpec(title="T", body="B", title_min_px=80, title_min_ratio=0.035)
+    spec = FontSpec(title="T", body="B", title_min_px=80, title_min_ratio=0.04)
     assert effective_title_min_px(spec, image_height=1000) == 80
 
 
 def test_font_spec_default_ratio_is_set():
     spec = FontSpec(title="T", body="B")
-    assert spec.title_min_ratio == 0.035
+    assert spec.title_min_ratio == 0.04
