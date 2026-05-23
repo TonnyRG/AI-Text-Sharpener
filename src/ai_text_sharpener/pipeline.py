@@ -63,6 +63,20 @@ def fit_font_sizes_to_bboxes(regions, tolerance: float = 1.05) -> int:
     return sum(1 for r in regions if fit_font_size_to_bbox(r, tolerance))
 
 
+def _reassign_family_weight_by_final_size(regions, spec: FontSpec) -> None:
+    """Re-run font assignment using each region's CURRENT (post-shrink) size.
+
+    ``analyze_image`` shrinks long-text regions via ``fit_font_sizes_to_bboxes``
+    after the initial family pick.  Without this re-pass, a region whose first
+    pass used the title font (and therefore got ``font_weight='bold'``) keeps
+    that weight even when the rendered size ends up below the title threshold.
+    """
+    final_families = assign_fonts([r.font_size_px for r in regions], spec)
+    for region, family in zip(regions, final_families):
+        region.font_family = family.replace(" Bold", "").replace(" Black", "")
+        region.font_weight = "bold" if family.lower().endswith(("bold", "black")) else "normal"
+
+
 def auto_align_left_groups(
     regions: list,
     tolerance_px: int = 15,
@@ -113,16 +127,12 @@ def analyze_image(
 
     regions = merge_horizontal_neighbors(regions)
     styled = [(r, extract_style(img, r)) for r in regions]
-    sizes = [s.font_size_px for _, s in styled]
     effective_spec = replace(font_spec, title_min_px=effective_title_min_px(font_spec, h))
-    font_families = assign_fonts(sizes, effective_spec)
     font_size_cap = int(h * max_font_ratio)
 
     editable_regions = []
-    for idx, ((region, style), family) in enumerate(zip(styled, font_families), start=1):
+    for idx, (region, style) in enumerate(styled, start=1):
         x, y, rw, rh = bbox_to_rect(region.bbox)
-        weight = "bold" if family.lower().endswith(("bold", "black")) else "normal"
-        font_family = family.replace(" Bold", "").replace(" Black", "")
         editable_regions.append(EditableRegion(
             id=f"r{idx:03d}",
             bbox=region.bbox,
@@ -132,9 +142,9 @@ def analyze_image(
             replace=True,
             x=x + rw // 2,
             y=y + rh // 2,
-            font_family=font_family,
+            font_family=font_spec.body,
             font_size_px=min(style.font_size_px, font_size_cap),
-            font_weight=weight,
+            font_weight="normal",
             letter_spacing_px=0.0,
             color=style.color,
             background=style.background,
@@ -142,6 +152,11 @@ def analyze_image(
 
     auto_align_left_groups(editable_regions)
     fit_font_sizes_to_bboxes(editable_regions)
+    # Assign font family + weight from the FINAL (post-shrink) size.  Doing it
+    # before fit_font_sizes_to_bboxes locks in `weight=bold` for any region
+    # whose initial bbox-height estimate exceeded the title threshold, even
+    # when the rendered text ends up well below it.
+    _reassign_family_weight_by_final_size(editable_regions, effective_spec)
 
     return ReviewDocument(
         source_image=str(input_path),
