@@ -2211,7 +2211,14 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/":
-            self._send_text(build_editor_html(), "text/html; charset=utf-8")
+            # The HTML inlines all CSS+JS, so any stale cache means the user
+            # runs old editor code after upgrading the package.  Disable HTML
+            # caching so a plain browser refresh always picks up new code.
+            self._send_text(
+                build_editor_html(),
+                "text/html; charset=utf-8",
+                cache_control="no-store",
+            )
         elif parsed.path == "/api/state":
             item = self._item_for_request(parsed)
             if item is None:
@@ -2533,11 +2540,19 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _send_text(self, text: str, content_type: str, status: int = 200) -> None:
+    def _send_text(
+        self,
+        text: str,
+        content_type: str,
+        status: int = 200,
+        cache_control: Optional[str] = None,
+    ) -> None:
         data = text.encode("utf-8")
         self.send_response(status)
         self.send_header("content-type", content_type)
         self.send_header("content-length", str(len(data)))
+        if cache_control:
+            self.send_header("cache-control", cache_control)
         self.end_headers()
         self.wfile.write(data)
 

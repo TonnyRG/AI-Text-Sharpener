@@ -44,6 +44,32 @@ def test_editor_html_contains_canvas_and_api_hooks():
     assert "/api/review" in html
 
 
+def test_editor_html_response_disables_browser_cache(tmp_path):
+    """Editor HTML must be served with Cache-Control: no-store so package
+    upgrades take effect on a plain browser refresh (regression for the
+    stale-cache pain encountered after pushing canvas-click bugfix)."""
+    image_path = tmp_path / "input.png"
+    Image.new("RGB", (120, 60), "white").save(image_path)
+    review_path = tmp_path / "review.json"
+    write_review_document(_review(image_path), review_path)
+
+    server = make_server(
+        image_path=image_path, review_path=review_path,
+        output_png=None, output_svg=None, host="127.0.0.1", port=0,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(f"http://127.0.0.1:{server.server_port}/", timeout=5) as response:
+            cc = response.headers.get("cache-control", "")
+        assert "no-store" in cc.lower(), f"expected no-store, got {cc!r}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_editor_server_reads_and_writes_review(tmp_path):
     image_path = tmp_path / "input.png"
     Image.new("RGB", (120, 60), "white").save(image_path)
