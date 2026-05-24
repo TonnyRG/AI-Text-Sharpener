@@ -4,8 +4,9 @@ from __future__ import annotations
 import argparse
 import shutil
 import tempfile
+import time
 from pathlib import Path
-from typing import Callable, Iterable, List
+from typing import Callable, Iterable, List, Optional
 
 from .fonts import FontSpec
 from .pipeline import analyze_image, render_review_document
@@ -20,6 +21,9 @@ from .review import ReviewDocument, write_review_document
 Analyzer = Callable[[Path, FontSpec], ReviewDocument]
 Renderer = Callable[[Path, Path, Path, ReviewDocument], None]
 Exporter = Callable[[Path, Path], List[Path]]
+# stage one of: "exporting" | "analyzing" | "rendering" | "done" | "error"
+# current/total are slide indices (1-based); message is human-readable.
+ProgressCallback = Callable[[str, int, int, str], None]
 
 
 DEFAULT_EXPORT_LONG_SIDE_PX = 4000  # ~300 DPI for a 13.3" widescreen slide
@@ -100,6 +104,19 @@ def export_ppt_slides_with_powerpoint(
         pythoncom.CoUninitialize()
 
 
+def _print_progress(stage: str, current: int, total: int, message: str) -> None:
+    if stage == "exporting":
+        print(f"  PowerPoint export: {message}", flush=True)
+    elif stage == "analyzing":
+        print(f"  [{current}/{total}] {message}: detecting text ...", flush=True)
+    elif stage == "rendering":
+        print(f"  [{current}/{total}] {message}: rendering draft ...", flush=True)
+    elif stage == "done":
+        print(f"  Done ({message})", flush=True)
+    elif stage == "error":
+        print(f"  ERROR: {message}", flush=True)
+
+
 def create_ppt_review_project(
     ppt_path: Path,
     output_dir: Path,
@@ -107,8 +124,14 @@ def create_ppt_review_project(
     exporter: Exporter = export_ppt_slides_with_powerpoint,
     analyzer: Analyzer = analyze_image,
     renderer: Renderer = render_review_document,
+    on_progress: Optional[ProgressCallback] = _print_progress,
 ) -> Path:
-    """Export a PPT deck, analyze each slide, and write a review project."""
+    """Export a PPT deck, analyze each slide, and write a review project.
+
+    ``on_progress(stage, current, total, message)`` is invoked at each step so
+    callers (CLI / editor) can surface progress.  ``None`` silences updates.
+    """
+    progress = on_progress or (lambda *_args, **_kw: None)
     ppt_path = Path(ppt_path)
     output_dir = Path(output_dir)
     slides_dir = output_dir / "slides"
@@ -118,11 +141,17 @@ def create_ppt_review_project(
     for directory in [slides_dir, reviews_dir, drafts_dir, finals_dir]:
         directory.mkdir(parents=True, exist_ok=True)
 
+    progress("exporting", 0, 0, "launching PowerPoint")
+    t_export = time.time()
     slide_paths = exporter(ppt_path, slides_dir)
     if not slide_paths:
         raise RuntimeError(f"No slides were exported from: {ppt_path}")
+    total = len(slide_paths)
+    progress("exporting", total, total,
+             f"got {total} slides in {time.time()-t_export:.1f}s")
 
     items = []
+    t_total = time.time()
     for index, slide_path in enumerate(slide_paths, start=1):
         slide_id = f"slide-{index:03d}"
         stem = f"slide_{index:03d}"
@@ -132,9 +161,13 @@ def create_ppt_review_project(
         final_png = finals_dir / f"{stem}_final.png"
         final_svg = finals_dir / f"{stem}_final.svg"
 
+        t_slide = time.time()
+        progress("analyzing", index, total, slide_path.name)
         review = analyzer(slide_path, font_spec)
         review.source_image = str(slide_path)
         write_review_document(review, review_path)
+
+        progress("rendering", index, total, slide_path.name)
         renderer(slide_path, draft_png, draft_svg, review)
 
         items.append(
@@ -149,6 +182,9 @@ def create_ppt_review_project(
                 draft_svg=project_relative_path(output_dir, draft_svg),
             )
         )
+        progress("analyzing", index, total,
+                 f"{slide_path.name} OK in {time.time()-t_slide:.1f}s "
+                 f"({len(review.regions)} regions)")
 
     project = ReviewProject(
         source_ppt=str(ppt_path),
@@ -156,6 +192,8 @@ def create_ppt_review_project(
     )
     project_path = output_dir / "review_project.json"
     write_review_project(project, project_path)
+    progress("done", total, total,
+             f"{total} slides in {time.time()-t_total:.1f}s total")
     return project_path
 
 

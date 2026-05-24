@@ -1352,7 +1352,26 @@ EDITOR_HTML = r"""<!doctype html>
 
     async function importPpt(file) {
       if (!file) return;
-      setStatus(`Importing ${file.name} (this can take minutes)`);
+      setStatus(`Importing ${file.name} ...`);
+      // Poll /api/import-progress every 500ms while the POST is in flight, so
+      // the user sees per-slide stage updates instead of a silent 5-10 minute wait.
+      let polling = true;
+      const poll = async () => {
+        while (polling) {
+          try {
+            const r = await fetch('/api/import-progress');
+            if (r.ok) {
+              const p = await r.json();
+              if (p && p.stage) {
+                const tag = p.total > 0 ? `[${p.current}/${p.total}] ` : '';
+                setStatus(`Importing ${file.name} — ${tag}${p.stage}: ${p.message}`);
+              }
+            }
+          } catch (_) { /* ignore transient polling errors */ }
+          await new Promise(r => setTimeout(r, 500));
+        }
+      };
+      const pollPromise = poll();
       try {
         const buffer = await file.arrayBuffer();
         const res = await fetch('/api/import-ppt', {
@@ -1363,6 +1382,8 @@ EDITOR_HTML = r"""<!doctype html>
           },
           body: buffer,
         });
+        polling = false;
+        await pollPromise;
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           setStatus(data.error || 'PPT import failed');
@@ -1371,6 +1392,8 @@ EDITOR_HTML = r"""<!doctype html>
         setStatus(`Imported ${data.slide_count} slides -> ${data.project_path}`);
         await load(null);
       } catch (err) {
+        polling = false;
+        await pollPromise;
         setStatus('PPT import failed: ' + err.message);
       }
     }
@@ -2178,6 +2201,8 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Slide not found"}, status=404)
                 return
             self._send_file(self._item_image_path(item))
+        elif parsed.path == "/api/import-progress":
+            self._send_json(self._state.get("import_progress") or {"active": False})
         elif parsed.path == "/api/fonts":
             self._send_json({
                 "system_groups": [
@@ -2362,11 +2387,25 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
         ppt_target = output_dir / f"{stem}.pptx"
         ppt_target.write_bytes(body)
 
+        def _on_progress(stage: str, current: int, total: int, message: str) -> None:
+            # Atomic dict replacement keeps reads (from /api/import-progress on
+            # another thread) consistent without explicit locking.
+            self._state["import_progress"] = {
+                "active": stage not in ("done", "error"),
+                "stage": stage,
+                "current": current,
+                "total": total,
+                "message": message,
+            }
+
+        _on_progress("starting", 0, 0, original_name)
         try:
             project_path = create_ppt_review_project(
                 ppt_target, output_dir, self.font_spec,
+                on_progress=_on_progress,
             )
         except Exception as exc:
+            _on_progress("error", 0, 0, str(exc))
             self._send_json({"error": f"Import failed: {exc}"}, status=500)
             return
 

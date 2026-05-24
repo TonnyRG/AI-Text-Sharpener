@@ -63,3 +63,62 @@ def test_create_ppt_review_project_with_injected_exporter(tmp_path):
     assert project.items[0].image_path == "slides\\slide_001.jpg"
     assert resolve_project_path(project_path, project.items[1].review_path).exists()
     assert resolve_project_path(project_path, project.items[1].draft_svg).exists()
+
+
+def test_create_ppt_review_project_calls_progress_callback(tmp_path):
+    ppt_path = tmp_path / "deck.pptx"
+    ppt_path.write_bytes(b"fake ppt")
+    output_dir = tmp_path / "review"
+
+    def fake_exporter(_p, slides_dir):
+        first = slides_dir / "slide_001.jpg"
+        Image.new("RGB", (160, 90), "white").save(first)
+        return [first]
+
+    def fake_renderer(_i, png, svg, _r):
+        png.write_bytes(b"x"); svg.write_text("<svg/>", encoding="utf-8")
+
+    events = []
+    create_ppt_review_project(
+        ppt_path=ppt_path,
+        output_dir=output_dir,
+        font_spec=FontSpec(title="Arial", body="Arial"),
+        exporter=fake_exporter,
+        analyzer=lambda p, _s: _review(p),
+        renderer=fake_renderer,
+        on_progress=lambda stage, cur, total, msg: events.append((stage, cur, total)),
+    )
+
+    # We expect at least: exporting (start + finish), analyzing (start), rendering, done
+    stages = [e[0] for e in events]
+    assert "exporting" in stages
+    assert "analyzing" in stages
+    assert "rendering" in stages
+    assert stages[-1] == "done"
+    # Last event reports total slide count
+    assert events[-1][1] == 1 and events[-1][2] == 1
+
+
+def test_create_ppt_review_project_silences_progress_when_callback_is_none(tmp_path):
+    ppt_path = tmp_path / "deck.pptx"
+    ppt_path.write_bytes(b"fake ppt")
+    output_dir = tmp_path / "review"
+
+    def fake_exporter(_p, slides_dir):
+        first = slides_dir / "slide_001.jpg"
+        Image.new("RGB", (160, 90), "white").save(first)
+        return [first]
+
+    def fake_renderer(_i, png, svg, _r):
+        png.write_bytes(b"x"); svg.write_text("<svg/>", encoding="utf-8")
+
+    # Just verify it doesn't crash; nothing to assert beyond completion.
+    create_ppt_review_project(
+        ppt_path=ppt_path,
+        output_dir=output_dir,
+        font_spec=FontSpec(title="Arial", body="Arial"),
+        exporter=fake_exporter,
+        analyzer=lambda p, _s: _review(p),
+        renderer=fake_renderer,
+        on_progress=None,
+    )

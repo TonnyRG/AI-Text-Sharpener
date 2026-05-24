@@ -1,6 +1,8 @@
 import pytest
 
-from ai_text_sharpener.detect import detect_text, TextRegion, _resolve_profile
+from ai_text_sharpener.detect import (
+    detect_text, TextRegion, _resolve_profile, _resolve_detail,
+)
 
 
 def test_detect_returns_list_of_regions(sample_image_path):
@@ -52,3 +54,29 @@ def test_resolve_profile_case_insensitive(monkeypatch):
     monkeypatch.setenv("ATS_OCR_PROFILE", "SERVER")
     det, rec = _resolve_profile()
     assert "server" in det
+
+
+def test_resolve_detail_defaults_to_mid(monkeypatch):
+    monkeypatch.delenv("ATS_OCR_DETAIL", raising=False)
+    assert _resolve_detail() == 3000
+
+
+def test_resolve_detail_high(monkeypatch):
+    monkeypatch.setenv("ATS_OCR_DETAIL", "high")
+    assert _resolve_detail() == 4000
+
+
+def test_resolve_detail_fast(monkeypatch):
+    monkeypatch.setenv("ATS_OCR_DETAIL", "fast")
+    assert _resolve_detail() == 2000
+
+
+def test_resolve_detail_rejects_unknown(monkeypatch):
+    monkeypatch.setenv("ATS_OCR_DETAIL", "ultra")
+    with pytest.raises(ValueError):
+        _resolve_detail()
+
+
+def test_resolve_detail_case_insensitive(monkeypatch):
+    monkeypatch.setenv("ATS_OCR_DETAIL", "HIGH")
+    assert _resolve_detail() == 4000
