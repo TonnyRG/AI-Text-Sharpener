@@ -166,6 +166,39 @@ EDITOR_HTML = r"""<!doctype html>
       line-height: 1.4;
     }
 
+    .projects-menu-panel { min-width: 420px; max-height: 60vh; overflow-y: auto; padding: 0; }
+    .projects-menu-empty { padding: 16px; color: var(--muted); font-size: 12px; text-align: center; }
+    .projects-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+      align-items: center;
+    }
+    .projects-row:last-child { border-bottom: 0; }
+    .projects-row:hover { background: rgba(15, 23, 42, 0.04); }
+    .projects-row.active { background: rgba(37, 99, 235, 0.08); }
+    .projects-row.active .projects-name { font-weight: 600; }
+    .projects-row.active .projects-name::before { content: "✓ "; color: var(--accent); }
+    .projects-name { font-size: 13px; color: var(--text); }
+    .projects-meta { font-size: 11px; color: var(--muted); margin-top: 2px; grid-column: 1; }
+    .projects-delete {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--muted);
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
+    }
+    .projects-delete:hover:not(:disabled) { background: rgba(220, 38, 38, 0.1); color: rgb(220, 38, 38); border-color: rgba(220, 38, 38, 0.3); }
+    .projects-delete:disabled { opacity: 0.3; cursor: not-allowed; }
+
     .slides-head {
       display: flex;
       align-items: center;
@@ -519,6 +552,10 @@ EDITOR_HTML = r"""<!doctype html>
         <button id="fitSizesBtn" type="button" title="Shrink any region's font-size that overflows its bbox">Fit sizes</button>
         <button id="saveBtn" class="primary" type="button">Save</button>
         <button id="renderBtn" type="button">Render</button>
+        <div class="file-menu">
+          <button id="projectsMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Switch between imported PPT projects">Projects ▾</button>
+          <div id="projectsMenuPanel" class="file-menu-panel projects-menu-panel" hidden></div>
+        </div>
         <div class="file-menu">
           <button id="fileMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Import / Export project files">File ▾</button>
           <div id="fileMenuPanel" class="file-menu-panel" hidden>
@@ -2065,6 +2102,96 @@ EDITOR_HTML = r"""<!doctype html>
     document.addEventListener('keydown', (evt) => {
       if (evt.key === 'Escape' && !fileMenuPanel.hidden) setFileMenuOpen(false);
     });
+
+    // ── Projects dropdown ─────────────────────────────────────────────────────
+    const projectsMenuBtn = document.getElementById('projectsMenuBtn');
+    const projectsMenuPanel = document.getElementById('projectsMenuPanel');
+    function setProjectsMenuOpen(open) {
+      projectsMenuPanel.hidden = !open;
+      projectsMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) renderProjectsMenu();
+    }
+    async function renderProjectsMenu() {
+      projectsMenuPanel.innerHTML = '<div class="projects-menu-empty">Loading…</div>';
+      let projects = [];
+      try {
+        const r = await fetch('/api/projects');
+        if (r.ok) projects = (await r.json()).projects || [];
+      } catch (_) { /* fall through to empty state */ }
+      if (!projects.length) {
+        projectsMenuPanel.innerHTML = '<div class="projects-menu-empty">No imported projects yet. Use File → Import PPT to create one.</div>';
+        return;
+      }
+      projectsMenuPanel.innerHTML = '';
+      for (const p of projects) {
+        const row = document.createElement('div');
+        row.className = 'projects-row' + (p.is_active ? ' active' : '');
+        const meta = [
+          p.slide_count + ' slides',
+          p.modified_iso.replace('T', ' ').slice(0, 16),
+          p.source_ppt || '(no source ppt)',
+        ].join(' · ');
+        row.innerHTML = `
+          <div class="projects-name"></div>
+          <button class="projects-delete" type="button" title="Delete this project's files">🗑</button>
+          <div class="projects-meta"></div>
+        `;
+        row.querySelector('.projects-name').textContent = p.name;
+        row.querySelector('.projects-meta').textContent = meta;
+        const delBtn = row.querySelector('.projects-delete');
+        delBtn.disabled = p.is_active;
+        if (p.is_active) delBtn.title = "Can't delete the active project. Switch first.";
+        row.addEventListener('click', async (evt) => {
+          if (evt.target === delBtn) return;  // delete handled separately
+          if (p.is_active) { setProjectsMenuOpen(false); return; }
+          setStatus(`Switching to ${p.name}…`);
+          try {
+            const r = await fetch('/api/switch-project', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ project_path: p.project_path }),
+            });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) { setStatus(data.error || 'Switch failed'); return; }
+            setProjectsMenuOpen(false);
+            await load(null);
+            setStatus(`Switched to ${p.name}`);
+          } catch (err) {
+            setStatus('Switch failed: ' + err.message);
+          }
+        });
+        delBtn.addEventListener('click', async (evt) => {
+          evt.stopPropagation();
+          if (!confirm(`Delete project "${p.name}" and all its files (slides, reviews, drafts, finals, .pptx)?\n\nThis cannot be undone.`)) return;
+          try {
+            const r = await fetch('/api/project', {
+              method: 'DELETE',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ project_path: p.project_path }),
+            });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) { setStatus(data.error || 'Delete failed'); return; }
+            setStatus(`Deleted ${p.name}`);
+            renderProjectsMenu();  // refresh list in place
+          } catch (err) {
+            setStatus('Delete failed: ' + err.message);
+          }
+        });
+        projectsMenuPanel.appendChild(row);
+      }
+    }
+    projectsMenuBtn.addEventListener('click', (evt) => {
+      evt.stopPropagation();
+      setProjectsMenuOpen(projectsMenuPanel.hidden);
+    });
+    document.addEventListener('pointerdown', (evt) => {
+      if (projectsMenuPanel.hidden) return;
+      if (projectsMenuPanel.contains(evt.target) || projectsMenuBtn.contains(evt.target)) return;
+      setProjectsMenuOpen(false);
+    }, true);
+    document.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Escape' && !projectsMenuPanel.hidden) setProjectsMenuOpen(false);
+    });
     document.addEventListener('keydown', (evt) => {
       if (!(evt.ctrlKey || evt.metaKey)) return;
       const k = evt.key.toLowerCase();
@@ -2119,6 +2246,52 @@ DEFAULT_FONT_SPEC = FontSpec(
     title="Microsoft YaHei Bold", body="Microsoft YaHei", title_min_px=40,
 )
 DEFAULT_FONTS_DIR = Path("fonts")
+
+
+PROJECTS_ROOT = Path("examples") / "ppt_reviews"
+
+
+def list_projects(
+    projects_root: Path = PROJECTS_ROOT,
+    active_path: Optional[Path] = None,
+) -> list[dict]:
+    """Discover review projects under ``projects_root`` (default ``examples/ppt_reviews``).
+
+    Returns one dict per directory that contains a ``review_project.json``,
+    sorted by modification time descending (most-recently-edited first).
+    Each entry has: ``name``, ``source_ppt`` (basename or ""), ``slide_count``,
+    ``modified_iso`` (ISO 8601), ``project_path`` (absolute string),
+    ``is_active`` (matches ``active_path`` after resolve).
+    """
+    import datetime
+    if not projects_root.exists():
+        return []
+    active_resolved = active_path.resolve() if active_path else None
+    entries: list[dict] = []
+    for child in projects_root.iterdir():
+        if not child.is_dir():
+            continue
+        manifest = child / "review_project.json"
+        if not manifest.is_file():
+            continue
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        items = payload.get("items") or []
+        source_ppt = payload.get("source_ppt") or ""
+        mtime = manifest.stat().st_mtime
+        entries.append({
+            "name": child.name,
+            "source_ppt": Path(source_ppt).name if source_ppt else "",
+            "slide_count": len(items),
+            "modified_iso": datetime.datetime.fromtimestamp(mtime).isoformat(timespec="seconds"),
+            "modified_ts": mtime,
+            "project_path": str(manifest.resolve()),
+            "is_active": active_resolved is not None and manifest.resolve() == active_resolved,
+        })
+    entries.sort(key=lambda e: e["modified_ts"], reverse=True)
+    return entries
 
 
 class ReviewEditorHandler(BaseHTTPRequestHandler):
@@ -2242,6 +2415,8 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
             self._send_file(self._item_image_path(item))
         elif parsed.path == "/api/import-progress":
             self._send_json(self._state.get("import_progress") or {"active": False})
+        elif parsed.path == "/api/projects":
+            self._send_json({"projects": list_projects(active_path=self.project_path)})
         elif parsed.path == "/api/fonts":
             self._send_json({
                 "system_groups": [
@@ -2394,8 +2569,90 @@ class ReviewEditorHandler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "output": str(result)})
         elif parsed.path == "/api/import-ppt":
             self._handle_import_ppt()
+        elif parsed.path == "/api/switch-project":
+            self._handle_switch_project()
         else:
             self._send_json({"error": "Not found"}, status=404)
+
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/project":
+            self._handle_delete_project()
+        else:
+            self._send_json({"error": "Not found"}, status=404)
+
+    def _resolve_safe_project_manifest(self, raw_path: str) -> Optional[Path]:
+        """Resolve a posted project_path and ensure it lives under PROJECTS_ROOT.
+
+        Returns the absolute Path to ``review_project.json``, or None if the
+        path is missing, malformed, escapes the projects root, or doesn't
+        actually point at a manifest file.  Callers should treat None as
+        "reject with 400".
+        """
+        if not raw_path:
+            return None
+        try:
+            target = Path(raw_path).resolve()
+        except (OSError, ValueError):
+            return None
+        if target.name != "review_project.json" or not target.is_file():
+            return None
+        # Reject paths outside the projects root (defends against ../ tricks
+        # or absolute paths pointing somewhere else on disk).
+        root = (Path.cwd() / PROJECTS_ROOT).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError:
+            return None
+        return target
+
+    def _handle_switch_project(self) -> None:
+        body = self._drain_body()
+        try:
+            payload = json.loads(body or b"{}")
+        except json.JSONDecodeError:
+            self._send_json({"error": "Invalid JSON"}, status=400)
+            return
+        manifest = self._resolve_safe_project_manifest(payload.get("project_path", ""))
+        if manifest is None:
+            self._send_json(
+                {"error": "project_path must point at a review_project.json under examples/ppt_reviews/"},
+                status=400,
+            )
+            return
+        self.project_path = manifest
+        self._send_json({"ok": True, "project_path": str(manifest)})
+
+    def _handle_delete_project(self) -> None:
+        body = self._drain_body()
+        try:
+            payload = json.loads(body or b"{}")
+        except json.JSONDecodeError:
+            self._send_json({"error": "Invalid JSON"}, status=400)
+            return
+        manifest = self._resolve_safe_project_manifest(payload.get("project_path", ""))
+        if manifest is None:
+            self._send_json(
+                {"error": "project_path must point at a review_project.json under examples/ppt_reviews/"},
+                status=400,
+            )
+            return
+        # Refuse to delete the currently-active project — prevents foot-shooting
+        # and avoids leaving the editor pointing at a dead path.
+        if self.project_path and Path(self.project_path).resolve() == manifest:
+            self._send_json(
+                {"error": "Cannot delete the active project. Switch to another project first."},
+                status=400,
+            )
+            return
+        import shutil
+        target_dir = manifest.parent
+        try:
+            shutil.rmtree(target_dir)
+        except OSError as exc:
+            self._send_json({"error": f"Failed to delete project: {exc}"}, status=500)
+            return
+        self._send_json({"ok": True, "deleted": str(target_dir)})
 
     def _drain_body(self) -> bytes:
         length = int(self.headers.get("content-length", "0"))

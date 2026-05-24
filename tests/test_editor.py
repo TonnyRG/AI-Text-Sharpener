@@ -1,10 +1,11 @@
 import json
 import threading
+import urllib.error
 import urllib.request
 
 from PIL import Image
 
-from ai_text_sharpener.editor import build_editor_html, make_server
+from ai_text_sharpener.editor import build_editor_html, list_projects, make_server
 from ai_text_sharpener.project import ReviewProject, ReviewProjectItem, write_review_project
 from ai_text_sharpener.review import EditableRegion, ReviewDocument, write_review_document
 
@@ -42,6 +43,197 @@ def test_editor_html_contains_canvas_and_api_hooks():
     assert 'id="letterSpacing"' in html
     assert "/api/state" in html
     assert "/api/review" in html
+
+
+def _make_fake_project(root, name, source_ppt_name, slide_count, mtime_offset=0):
+    """Create a project dir with a review_project.json under ``root/name/``.
+
+    ``mtime_offset`` is added to the manifest's mtime so tests can pin order.
+    """
+    import time
+    proj = root / name
+    proj.mkdir(parents=True)
+    items = [{"id": f"slide-{i:03d}", "name": f"Slide {i}", "image_path": "",
+              "review_path": "", "output_png": "", "output_svg": ""}
+             for i in range(1, slide_count + 1)]
+    manifest = proj / "review_project.json"
+    manifest.write_text(
+        json.dumps({"source_ppt": str(proj / source_ppt_name), "items": items}),
+        encoding="utf-8",
+    )
+    if mtime_offset:
+        target = time.time() + mtime_offset
+        import os
+        os.utime(manifest, (target, target))
+    return manifest
+
+
+def test_list_projects_returns_empty_when_root_missing(tmp_path):
+    assert list_projects(projects_root=tmp_path / "absent") == []
+
+
+def test_list_projects_sorted_by_mtime_descending(tmp_path):
+    _make_fake_project(tmp_path, "older", "deck1.pptx", 3, mtime_offset=-100)
+    _make_fake_project(tmp_path, "newer", "deck2.pptx", 5, mtime_offset=0)
+
+    projects = list_projects(projects_root=tmp_path)
+
+    assert [p["name"] for p in projects] == ["newer", "older"]
+    assert projects[0]["slide_count"] == 5
+    assert projects[0]["source_ppt"] == "deck2.pptx"
+    assert "T" in projects[0]["modified_iso"]  # ISO 8601 sentinel
+
+
+def test_list_projects_marks_active(tmp_path):
+    active_manifest = _make_fake_project(tmp_path, "active", "a.pptx", 2)
+    _make_fake_project(tmp_path, "other", "b.pptx", 4)
+
+    projects = list_projects(projects_root=tmp_path, active_path=active_manifest)
+    by_name = {p["name"]: p for p in projects}
+    assert by_name["active"]["is_active"] is True
+    assert by_name["other"]["is_active"] is False
+
+
+def test_list_projects_skips_dirs_without_manifest_or_with_bad_json(tmp_path):
+    (tmp_path / "no_manifest").mkdir()
+    bad = tmp_path / "bad_json"
+    bad.mkdir()
+    (bad / "review_project.json").write_text("{not valid", encoding="utf-8")
+    _make_fake_project(tmp_path, "good", "x.pptx", 1)
+
+    names = [p["name"] for p in list_projects(projects_root=tmp_path)]
+    assert names == ["good"]
+
+
+def _start_server(image_path, review_path=None, project_path=None):
+    server = make_server(
+        image_path=image_path, review_path=review_path,
+        output_png=None, output_svg=None,
+        host="127.0.0.1", port=0, project_path=project_path,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def _stop_server(server, thread):
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=5)
+
+
+def test_switch_project_changes_active_project(tmp_path, monkeypatch):
+    # Set up two fake projects under cwd/examples/ppt_reviews/
+    monkeypatch.chdir(tmp_path)
+    projects_root = tmp_path / "examples" / "ppt_reviews"
+    projects_root.mkdir(parents=True)
+    first = _make_fake_project(projects_root, "alpha", "a.pptx", 1)
+    second = _make_fake_project(projects_root, "beta", "b.pptx", 2)
+    image_path = tmp_path / "input.png"
+    Image.new("RGB", (120, 60), "white").save(image_path)
+    review_path = tmp_path / "review.json"
+    write_review_document(_review(image_path), review_path)
+
+    server, thread = _start_server(image_path, review_path, project_path=first)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        body = json.dumps({"project_path": str(second)}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{base}/api/switch-project", data=body,
+            headers={"content-type": "application/json"}, method="POST",
+        )
+        with opener.open(req, timeout=5) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+        assert result["ok"] is True
+        assert result["project_path"] == str(second.resolve())
+
+        # After switching, /api/projects should mark beta as active
+        with opener.open(f"{base}/api/projects", timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        by_name = {p["name"]: p for p in data["projects"]}
+        assert by_name["beta"]["is_active"] is True
+        assert by_name["alpha"]["is_active"] is False
+    finally:
+        _stop_server(server, thread)
+
+
+def test_switch_project_rejects_path_outside_root(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "examples" / "ppt_reviews").mkdir(parents=True)
+    # Drop a manifest OUTSIDE the projects root
+    outside = tmp_path / "rogue"
+    outside.mkdir()
+    bad = outside / "review_project.json"
+    bad.write_text('{"items": []}', encoding="utf-8")
+    image_path = tmp_path / "input.png"
+    Image.new("RGB", (120, 60), "white").save(image_path)
+    review_path = tmp_path / "review.json"
+    write_review_document(_review(image_path), review_path)
+
+    server, thread = _start_server(image_path, review_path)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        body = json.dumps({"project_path": str(bad)}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{base}/api/switch-project", data=body,
+            headers={"content-type": "application/json"}, method="POST",
+        )
+        try:
+            opener.open(req, timeout=5)
+            raised = False
+        except urllib.error.HTTPError as exc:
+            raised = True
+            assert exc.code == 400
+        assert raised, "expected HTTP 400 for out-of-root path"
+    finally:
+        _stop_server(server, thread)
+
+
+def test_delete_project_removes_dir_but_not_active(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    projects_root = tmp_path / "examples" / "ppt_reviews"
+    projects_root.mkdir(parents=True)
+    active = _make_fake_project(projects_root, "current", "a.pptx", 1)
+    inactive = _make_fake_project(projects_root, "old", "b.pptx", 1)
+    image_path = tmp_path / "input.png"
+    Image.new("RGB", (120, 60), "white").save(image_path)
+    review_path = tmp_path / "review.json"
+    write_review_document(_review(image_path), review_path)
+
+    server, thread = _start_server(image_path, review_path, project_path=active)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        # Deleting the inactive project succeeds
+        body = json.dumps({"project_path": str(inactive)}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{base}/api/project", data=body,
+            headers={"content-type": "application/json"}, method="DELETE",
+        )
+        with opener.open(req, timeout=5) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+        assert result["ok"] is True
+        assert not (projects_root / "old").exists()
+        assert (projects_root / "current").exists()  # untouched
+
+        # Deleting the active project must fail
+        body = json.dumps({"project_path": str(active)}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{base}/api/project", data=body,
+            headers={"content-type": "application/json"}, method="DELETE",
+        )
+        try:
+            opener.open(req, timeout=5)
+            raised = False
+        except urllib.error.HTTPError as exc:
+            raised = True
+            assert exc.code == 400
+        assert raised, "expected HTTP 400 when deleting the active project"
+        assert (projects_root / "current").exists()
+    finally:
+        _stop_server(server, thread)
 
 
 def test_editor_html_response_disables_browser_cache(tmp_path):
