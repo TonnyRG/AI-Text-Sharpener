@@ -65,6 +65,8 @@ def test_reassign_family_weight_keeps_bold_when_still_above_threshold():
 
 
 def test_sharpen_image_end_to_end(sample_image_path, tmp_path):
+    import pytest
+    pytest.importorskip("paddleocr")
     spec = FontSpec(title="Microsoft YaHei", body="Microsoft YaHei", title_min_px=40)
     out_png = tmp_path / "out.png"
     out_svg = tmp_path / "out.svg"

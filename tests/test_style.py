@@ -57,6 +57,8 @@ def test_sample_background_color_picks_outside_border():
 
 
 def test_extract_style_returns_complete_style(sample_image_path):
+    import pytest
+    pytest.importorskip("paddleocr")
     from ai_text_sharpener.detect import detect_text
     regions = detect_text(str(sample_image_path))
     img = np.array(Image.open(sample_image_path))
