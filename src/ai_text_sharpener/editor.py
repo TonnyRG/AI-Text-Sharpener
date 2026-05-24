@@ -712,6 +712,13 @@ EDITOR_HTML = r"""<!doctype html>
     let dragging = false;
     let dragStartPositions = null;
     let dragStartPoint = null;
+    // Click-on-already-multi-selected ergonomics: defer "reduce to single" until
+    // pointerup confirms no actual drag happened.  Without this, clicking one
+    // member of a multi-selection silently fails because pointerdown enters drag
+    // mode and never re-evaluates the selection.
+    let pendingSingleSelectId = null;
+    let dragHistoryPushed = false;
+    const DRAG_DEAD_ZONE_PX = 3;
     let viewMode = 'source';
     let previewMode = 'all';
     let snapGuides = [];
@@ -1886,14 +1893,23 @@ EDITOR_HTML = r"""<!doctype html>
           else { renderList(); draw(); }
         } else {
           if (!selectedIds.has(hit.id)) {
+            // Clicked a region outside the current selection — switch to it.
             selectedIds = new Set([hit.id]);
             selectRegion(hit.id);
+            pendingSingleSelectId = null;
+          } else if (selectedIds.size > 1) {
+            // Clicked one of a multi-selection.  Don't reduce yet — the user
+            // may be starting a group drag.  We'll reduce on pointerup if
+            // no drag actually happened.
+            pendingSingleSelectId = hit.id;
           }
           const replaceable = [...selectedIds]
             .map(id => state.regions.find(r => r.id === id))
             .filter(r => r && r.replace);
           if (replaceable.length) {
-            pushHistory('drag-' + hit.id + '-' + Date.now());
+            // Defer pushHistory until the first real move so a pure click
+            // doesn't create a no-op undo step.
+            dragHistoryPushed = false;
             dragging = true;
             dragStartPoint = p;
             dragStartPositions = new Map(replaceable.map(r => [r.id, { x: r.x, y: r.y }]));
@@ -1920,6 +1936,13 @@ EDITOR_HTML = r"""<!doctype html>
       const p = imagePoint(evt);
       let dx = p.x - dragStartPoint.x;
       let dy = p.y - dragStartPoint.y;
+      // Ignore sub-pixel jitter; only treat motion past the dead zone as a real drag.
+      if (!dragHistoryPushed) {
+        if (Math.abs(dx) < DRAG_DEAD_ZONE_PX && Math.abs(dy) < DRAG_DEAD_ZONE_PX) return;
+        pushHistory('drag-' + Date.now());
+        dragHistoryPushed = true;
+        pendingSingleSelectId = null;  // user is actually dragging, not clicking
+      }
       const primary = selectedRegion();
       if (primary && !evt.shiftKey) {
         const ps = dragStartPositions.get(primary.id);
@@ -1967,13 +1990,22 @@ EDITOR_HTML = r"""<!doctype html>
         try { canvas.releasePointerCapture(evt.pointerId); } catch {}
         return;
       }
-      const wasDragging = dragging;
+      // If the user clicked one of a multi-selection without dragging, reduce
+      // the selection to that single region now.
+      if (!dragHistoryPushed && pendingSingleSelectId) {
+        const targetId = pendingSingleSelectId;
+        selectedIds = new Set([targetId]);
+        selectRegion(targetId);
+      }
+      const actuallyDragged = dragHistoryPushed;
+      pendingSingleSelectId = null;
+      dragHistoryPushed = false;
       dragging = false;
       dragStartPositions = null;
       dragStartPoint = null;
       if (snapGuides.length) { snapGuides = []; draw(); }
       try { canvas.releasePointerCapture(evt.pointerId); } catch {}
-      if (wasDragging) scheduleAutoRender();
+      if (actuallyDragged) scheduleAutoRender();
     });
 
     document.getElementById('fitBtn').addEventListener('click', fitCanvas);

@@ -105,7 +105,7 @@ def analyze_image(
     font_spec: FontSpec,
     min_height_ratio: float = 0.020,
     min_height_px_cap: int = 30,
-    max_font_ratio: float = 0.05,
+    max_font_ratio: float = 0.10,
 ) -> ReviewDocument:
     """Detect text and return an editable replacement plan."""
     pil_img = Image.open(input_path).convert("RGB")
@@ -243,7 +243,7 @@ def sharpen_image(
     font_spec: FontSpec,
     min_height_ratio: float = 0.025,
     min_height_px_cap: int = 50,
-    max_font_ratio: float = 0.05,
+    max_font_ratio: float = 0.10,
 ) -> None:
     review = analyze_image(
         input_path=input_path,
