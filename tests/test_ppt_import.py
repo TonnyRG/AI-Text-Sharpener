@@ -1,4 +1,5 @@
 from PIL import Image
+from pathlib import Path
 
 from ai_text_sharpener.fonts import FontSpec
 from ai_text_sharpener.ppt_import import create_ppt_review_project
@@ -60,7 +61,7 @@ def test_create_ppt_review_project_with_injected_exporter(tmp_path):
 
     assert len(project.items) == 2
     assert project.items[0].id == "slide-001"
-    assert project.items[0].image_path == "slides\\slide_001.jpg"
+    assert Path(project.items[0].image_path) == Path("slides") / "slide_001.jpg"
     assert resolve_project_path(project_path, project.items[1].review_path).exists()
     assert resolve_project_path(project_path, project.items[1].draft_svg).exists()
 

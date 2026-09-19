@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>文字重绘 · AI Text Sharpener</title><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/app.css"></head>
+<body>
+<header class="topbar">
+  <div class="brand"><img src="/icon.svg" alt=""><strong>文字重绘</strong></div>
+  <div class="privacy"><i></i> 本地运行</div>
+  <button id="helpBtn" class="quiet">使用说明</button>
+</header>
+<main>
+  <aside class="library">
+    <div class="section-top"><span>工作区</span><button id="newBtn" class="icon-btn" title="导入为新项目">＋</button></div>
+    <select id="projectSelect" aria-label="切换项目"><option value="">选择项目</option></select>
+    <button id="importBtn" class="import-btn">＋ 导入图片 / PPTX</button>
+    <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,.pptx" multiple hidden>
+    <div class="section-top pages-label"><span>页面</span><span id="pageCount" class="count">0</span></div>
+    <div id="pages" class="pages"><p class="muted empty-small">导入后，页面会显示在这里</p></div>
+    <div class="section-top"><span>文字区域</span><span id="regionCount" class="count">0</span></div>
+    <div id="regions" class="regions"></div>
+    <div class="library-foot">自动保存到本机 <span id="saveState">· 准备就绪</span></div>
+  </aside>
+  <section class="workspace">
+    <div class="toolbar">
+      <div><strong id="pageTitle">未打开项目</strong><small id="pageMeta">导入文件或选择已有项目</small></div>
+      <div class="actions"><button id="undoBtn" title="撤销 Ctrl+Z" disabled>↶</button><button id="redoBtn" title="重做 Ctrl+Shift+Z / Ctrl+Y" disabled>↷</button><button id="analyzeBtn" disabled>识别当前页</button><button id="exportBtn" disabled>更多导出 ↓</button></div>
+    </div>
+    <div class="batchbar"><button id="analyzeAllBtn" class="primary" disabled title="选择重新识别全部页面，或仅处理未完成页面">识别整个 PPT</button><button id="exportAllBtn" disabled>导出整个 PPT</button><span id="batchSummary" class="muted">导入后可批量处理全部页面</span></div>
+    <div id="welcome" class="welcome">
+      <h1>导入文件</h1>
+      <p>可拖入图片或 PPTX，也可从左侧选择已有项目。</p>
+      <div class="welcome-actions"><button id="welcomeImport" class="primary large">选择文件</button><button id="demoBtn" class="large">加载测试示例</button></div>
+      <div class="welcome-note">支持 PNG、JPG、WebP，以及每页单张铺满图片的 PPTX</div>
+    </div>
+    <div id="editor" class="editor" hidden>
+      <div class="viewbar"><div class="segmented" id="viewModes"><button data-mode="original" class="active">原图</button><button data-mode="result">重绘</button><button data-mode="compare">滑动对比</button></div><div class="view-tools"><button id="drawBtn">＋ 手动画框</button><label><input type="checkbox" id="boxesChk" checked> 显示文字框</label><select id="zoom" aria-label="缩放"><option value="fit">适应窗口</option><option value="1">100%</option><option value="2">200%</option></select></div></div>
+      <div id="viewport" class="viewport"><div id="sheet" class="sheet"><img id="sourceImage" alt="原始图片" draggable="false"><img id="resultImage" alt="文字重绘结果" draggable="false" hidden><div id="compareLine" hidden><span>◀ ▶</span></div><svg id="overlay" aria-label="文字区域画布"></svg></div></div>
+      <div class="canvas-foot"><span id="canvasHint">点击文字框，查看匹配结果。可拖动调整文字位置。</span><label id="compareControl" hidden>原图 <input type="range" id="compareRange" min="0" max="100" value="50"> 重绘</label><button id="previewBtn">更新预览</button></div>
+    </div>
+    <div id="jobBar" class="jobbar" hidden><div><span class="spinner"></span><span id="jobMessage">处理中…</span><button id="cancelBtn">取消</button></div><progress id="progress" max="100" value="0"></progress></div>
+  </section>
+  <aside class="inspector">
+    <div class="section-top"><span>文字属性</span></div>
+    <div id="noSelection" class="no-selection"><strong>未选择文字区域</strong><p>点击文字框或左侧列表进行编辑。</p></div>
+    <div id="properties" hidden>
+      <div class="region-head"><strong id="regionName">区域</strong><span id="fitBadge" class="badge">待匹配</span></div>
+      <label class="field">区域类型<select id="kindField"><option value="text">普通文字</option><option value="formula">公式</option></select></label>
+      <div id="formulaPanel" hidden><label class="field">LaTeX 公式<textarea id="latexField" rows="4" spellcheck="false" placeholder="例如：E=mc^2"></textarea></label><div class="fit-buttons"><button id="recognizeFormulaBtn" class="primary">识别公式</button><button id="fitFormulaBtn">匹配公式位置</button></div><p class="muted">检测到的公式先保留原图；识别或输入 LaTeX 后，勾选「重绘此区域」查看效果。核对上下标、分数和符号。当前采用数学字体，可调整字号、笔画与位置。</p></div>
+      <label id="plainTextLabel" class="field">文字内容<textarea id="textField" rows="2" placeholder="输入这一行的正确文字"></textarea></label>
+      <div id="originalText" class="muted original-text"></div>
+      <div class="toggle-row"><label><input id="enabledField" type="checkbox"> 重绘此区域</label><label><input id="lockedField" type="checkbox"> 锁定样式</label></div>
+      <hr>
+      <div class="section-top"><span>字体与样式</span><span id="scoreText" class="muted"></span></div>
+      <input id="fontSearch" type="search" placeholder="搜索本机字体…" aria-label="搜索字体">
+      <select id="fontField" aria-label="字体及字重"></select>
+      <div class="two-col"><label class="field">字号 / px<input id="sizeField" type="number" min="4" max="1000" step="0.5"></label><label class="field">字距 / px<input id="spacingField" type="number" min="-300" max="300" step="0.25"></label></div>
+      <label class="field">笔画加粗 / px<input id="strokeField" type="number" min="0" max="12" step="0.05" value="0"></label>
+      <div class="muted">0 为字体原始字重。偏细时可小幅增加，如 0.1–0.5；需变细时选择较轻字重。</div>
+      <label class="color-field">文字颜色<input id="colorField" type="color"><span id="colorValue"></span></label>
+      <div class="fit-buttons"><button id="fitBtn" class="primary">自动匹配字体</button><button id="fitFontBtn">按所选字体拟合</button></div>
+      <div id="alternatives" class="alternatives"></div>
+      <hr>
+      <div class="section-top"><span>位置与背景</span><span class="muted">原图像素坐标</span></div>
+      <div class="two-col"><label class="field">X<input id="xField" type="number" step="0.5"></label><label class="field">Y<input id="yField" type="number" step="0.5"></label></div>
+      <div class="section-top ocr-heading"><span>OCR 框 / 原字范围</span><button id="editBoxBtn" type="button">调整 OCR 框</button></div>
+      <div class="two-col"><label class="field">框 X<input id="boxXField" type="number" min="0" step="any"></label><label class="field">框 Y<input id="boxYField" type="number" min="0" step="any"></label></div>
+      <div class="two-col"><label class="field">框宽<input id="boxWField" type="number" min="3" step="any"></label><label class="field">框高<input id="boxHField" type="number" min="3" step="any"></label></div>
+      <p class="muted">拖动橙色框的边或角调整大小，拖动框内部移动范围。OCR 框决定识别与擦除范围，不会拉伸或移动重绘文字；改框后可重新匹配字体。清空文字内容可擦除原字，删除区域则恢复原图。</p>
+      <label class="field">背景处理<select id="eraseField"><option value="gradient">纯色 / 渐变补全</option><option value="inpaint">纹理局部修复</option><option value="none">保留背景，仅叠字</option></select></label>
+      <p id="fitNote" class="fit-note"></p>
+      <button id="deleteRegion" class="danger quiet">删除区域，保留原图</button>
+    </div>
+  </aside>
+</main>
+<div id="toast" class="toast" role="status" hidden></div>
+<dialog id="batchDialog"><div class="dialog-head"><h2>识别整个 PPT</h2><button id="closeBatch" class="icon-btn">×</button></div><p id="batchDialogSummary"></p><div class="export-options"><button id="rescanAllBtn" class="primary"><strong>重新识别全部页面</strong><span>重新识别文字并匹配字体，将替换所有页面的文字区域、样式及手动修改（包括锁定区域）。</span></button><button id="resumeBatchBtn"><strong>仅处理未完成页面</strong><span>保留已完成的页面；继续尚未识别或上次重新识别未完成的页面。</span></button></div><small>重新识别前会自动备份项目配置。中途取消时，未完成页保留原结果，可以稍后继续。</small></dialog>
+<dialog id="exportDialog"><div class="dialog-head"><h2>导出</h2><button id="closeExport" class="icon-btn">×</button></div><div class="export-options"><button id="svgExport"><strong>SVG 矢量图 ↗</strong><span>当前页 · 文字轮廓</span></button><button id="pngExport"><strong>PNG 图片 ↗</strong><span>当前页 · 原始分辨率，无有损压缩</span></button><button id="pptExport"><strong>导出整个 PPT ↗</strong><span>全部页面 · SVG 轮廓 + PNG 兼容预览</span></button><button id="jsonExport"><strong>保存编辑数据 ↗</strong><span>项目 JSON · 另存配置备份</span></button></div><small>SVG / PPTX 中的文字为轮廓，继续改字请回到本应用。<br>旧版演示软件可能使用 PNG 兼容预览。</small></dialog>
+<dialog id="helpDialog"><div class="dialog-head"><h2>使用说明</h2><button id="closeHelp" class="icon-btn">×</button></div><ol><li>导入图片，点击「识别当前页」或「识别整个 PPT」。识别与拟合在本机运行。</li><li>核对识别文字；编辑后会自动更新预览。若想重新贴合原图，再点「自动匹配字体」。</li><li>调整字体、字重、字号、字距与位置；绿色框移动重绘文字，橙色 OCR 框控制原字范围，可拖动边角调整。</li><li>使用「滑动对比」检查。复杂图片背景可尝试「纹理局部修复」。</li><li>导出 SVG、PNG 或 PPTX。所有页面与修改自动保存在本机。</li><li>Ctrl+Z 撤销，Ctrl+Shift+Z 或 Ctrl+Y 重做；也可点击顶部 ↶ / ↷。输入框编辑、移动、调整 OCR 框、删除及匹配结果均可撤销。每页保留最近 80 步，切换页面、自动保存和导出不会清空；刷新窗口后清空。</li></ol><p>此版重点支持水平、单行文字。公式由独立模型检测，先完整保留原图；可识别为 LaTeX 后按二维结构重绘。复杂艺术字、倾斜文字与同一行多种样式需要手动画框拆分、校正；低置信识别默认保留原图。拟合分数用于比较候选，不是正确率。</p><p id="dataPath" class="muted"></p></dialog>
+<script src="/app.js"></script>
+</body></html>

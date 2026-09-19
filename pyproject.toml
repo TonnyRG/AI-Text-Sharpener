@@ -1,27 +1,30 @@
 [project]
 name = "ai-text-sharpener"
-version = "0.1.0"
+version = "0.4.0"
 description = "Replace blurry text in AI-generated images with crisp vector text"
 requires-python = ">=3.11"
 authors = [{name = "Li Nanzun", email = "licolinsr@gmail.com"}]
 license = {text = "Apache-2.0"}
 dependencies = [
-    "paddleocr>=2.7.0",
-    "paddlepaddle>=2.6.0",
     "pillow>=10.0.0",
-    "opencv-python>=4.9.0",
+    "opencv-python>=4.10.0,<5",
     "numpy>=1.26.0",
     "resvg-py>=0.1.0",
     "click>=8.1.0",
     "fonttools>=4.50",
     "python-pptx>=0.6.21",
+    "uharfbuzz>=0.40",
+    "rapidocr>=3.9,<4",
+    "onnxruntime>=1.20,<2",
     "pywin32>=306; platform_system == 'Windows'",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0", "pytest-cov>=4.1.0"]
+paddle = ["paddleocr>=3,<4", "paddlepaddle>=3,<4"]
 
 [project.scripts]
+ai-text-sharpener-studio = "ai_text_sharpener.studio:main"
 ai-text-sharpener = "ai_text_sharpener.cli:main"
 ai-text-sharpener-editor = "ai_text_sharpener.editor:main"
 ai-text-sharpener-ppt = "ai_text_sharpener.ppt_import:main"
@@ -33,3 +36,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+ai_text_sharpener = ["web/*", "*.cjs"]

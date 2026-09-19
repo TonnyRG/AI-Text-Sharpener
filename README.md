@@ -1,92 +1,118 @@
-# AI Text Sharpener
+# 文字重绘 · AI Text Sharpener Studio
 
-Replace blurry text in AI-generated images with crisp, editable vector text — then export the cleaned-up deck back to PPTX.
+在本机识别 AI 图片中的文字，匹配接近原图的字体、字重、字号、字距和位置，擦除旧字后以真实字体轮廓重绘。保留原图设计，重点改善文字的清晰度与还原程度。
 
-AI image generators are great at illustration but bad at text: the result is usually a soup of half-formed characters. This tool detects every text region with PaddleOCR, gently erases the originals, and rasters back sharp vector text in fonts of your choice. Everything is editable in a local browser editor before the final render.
+**v0.4.0：Linux 本地应用首版，已在 Fedora 44 / Python 3.12 上验证。** 无需 API Key，OCR 与字体匹配均在本机进行。首次安装需要联网下载依赖；处理图片不调用云服务。
 
-## Status
+## 当前电脑直接使用
 
-`v0.1` — MVP feature-complete. End-to-end pipeline works on Windows. Linux/macOS support is mostly untested.
-
-## Features
-
-- **OCR text detection** with PaddleOCR (PP-OCRv5 server models, CPU or GPU)
-- **Soft-erase** original blurry text without obvious patches
-- **SVG / PNG output** rendered with resvg — vector-perfect text
-- **Local browser editor** for hand-fixing OCR mistakes, font, color, position, alignment
-  - PPT-style interactions: marquee multi-select, drag, arrow-key nudge, snap-to-align
-  - Right-click rich formatting: superscript / subscript / bold / color / size per character
-  - Inline spans for mixed formatting in one text line (e.g. `H₂O`)
-  - Eyedropper color picker (uses native EyeDropper API where available)
-  - Auto-render with debounce; auto-fit font sizes to bbox
-  - Undo / redo (Ctrl+Z / Ctrl+Y)
-- **Font management**: scans installed system fonts grouped by language; drop additional `.ttf`/`.otf`/`.ttc` into `fonts/` to import
-- **Multi-slide projects**: PPT import via PowerPoint COM (Windows), batch processing, flat-image PPTX export
-
-## Install
+在应用菜单搜索 **文字重绘**，或运行：
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate              # Windows
-# source .venv/bin/activate         # Linux / macOS
-pip install -e .
+./scripts/launch-studio.sh
 ```
 
-PaddlePaddle is the heavyweight dependency. Default install gets the CPU build. For GPU, follow the [PaddlePaddle install guide](https://www.paddlepaddle.org.cn/install/quick) and pick the matching wheel before `pip install -e .`.
+启动后访问 <http://127.0.0.1:8766>。界面内有可直接体验的中英文测试示例。
 
-Windows-CPU users: set these env vars to avoid a known OneDNN bug:
+1. 导入 PNG、JPEG 等图片，或每页为一张完整图片的 PPTX。
+2. 点击 **识别整个 PPT**，选择 **重新识别全部页面** 或 **仅处理未完成页面**；只处理一页时点击 **识别当前页**。
+3. 用 **滑动对比** 检查效果；点击文字区域可改文字、字体及字重、字号、字距、颜色和坐标，也可拖动微调。
+4. 修改后会自动更新预览，也可点击 **更新预览**。预览复用导出的矢量渲染逻辑，不会清空撤销记录。选择 **按所选字体拟合**，可固定字体重新估计字号、字距与位置。
+5. **Ctrl+Z** 撤销，**Ctrl+Shift+Z / Ctrl+Y** 重做。每页保留最近 80 步；切换页和导出不会清空，切换项目或刷新窗口后清空。
+6. 点击 **导出整个 PPT**，按页面顺序导出全部页面。SVG、PNG 在「更多导出」中选择。项目自动保存在本机，关闭网页后可继续编辑。
+
+## 输出格式
+
+| 格式 | 文字形式 | 用途 |
+| --- | --- | --- |
+| SVG | 真实字体的矢量路径 | 放大文字仍清晰，无需接收方安装字体 |
+| PNG | 原图分辨率的无损位图 | 通用预览与图片工作流 |
+| PPTX | SVG 图片 + 无损 PNG 兼容后备图 | 支持 SVG 的演示软件显示矢量文字；不支持时显示 PNG |
+
+**PPTX 中的文字是矢量轮廓，不是 PowerPoint 原生文本框。** 可在 Studio 中修改文字后重新导出。SVG/PPTX 背景仍是原始位图；矢量化的是重新绘制的文字。不同演示软件对 SVG 的支持需在目标软件中确认。
+
+## 如何提高接近程度
+
+- 自动匹配会实际渲染一组本机字体，与原字形比较，给出前五个候选。分数只用于比较图形接近程度，不是 OCR 正确率或质量保证。
+- 中文和英文分别选择候选字体；初选字体后，会补充比较前三个候选字体家族的全部已安装直立字重（包括 Regular、Medium），避免候选数量限制漏掉合适字重。安装与原图接近的字体通常比反复调整字号更有效。
+- **笔画加粗 / px** 用于同一字体内的小幅增厚，0 表示原始字重，步长 0.05。优先选对真实字重，再尝试 0.1–0.5 px 微调；需要变细时改选较轻字重。增厚使用矢量描边，不改变字间的排版进位，预览、SVG 和 PPTX 使用同一几何轮廓。
+- OCR 漏字时可手动画框；同一行混合字体、字号、颜色时请拆成多个区域。
+- **纯色 / 渐变补全**适合平面幻灯片；**纹理局部修复**适合较复杂背景；**保留背景，仅叠字**可用于已有干净底图。
+- 拟合和擦字都可能失误。低置信度、明显倾斜或无合适字体的区域默认保留原图；不满意的区域也可取消“重绘此区域”。
+- 原字擦除框与新文字位置独立：拖动新字不会留下原字。橙色虚线表示擦除范围，绿色框表示新文字。
+- 点击 **调整 OCR 框** 后，可拖动橙色框的八个边角手柄改变大小，拖动内部移动范围；也可输入框 X、Y、宽、高。调框不会移动或缩放重绘文字，需要时再匹配字体。清空文字内容会擦除原字；删除区域或关闭重绘则保留原图。
+- 识别时使用识别器的逐字位置校验整行框，再按完整笔画扩展边界，减少将邻近图形当成文字的情况。不按图形颜色或形状作特殊判断；文字与图形相连或重叠、字符定位不可靠时仍需手动调整。
+
+## 已知边界
+
+当前重点是水平单行的中英文常规排版。弯曲字、透视字、艺术变形、描边发光、阴影、复杂纹理和严重乱码，尚不能保证忠实恢复。AI 生成的字形也可能不对应任何现成字体。工具提供候选与手动校正，不承诺所有图片一键完美。
+
+PPTX 导入严格支持单张图片铺满页面且无裁剪、旋转的幻灯片。包含原生文字、图表、组合形状的 PPTX，请先在原演示软件中导出页面图片再导入。多图片可一次导入，也支持批量识别。
+
+**批量处理规则：**「识别整个 PPT」提供两个选项：
+
+- **重新识别全部页面**：重新 OCR 并匹配字体，替换已有文字区域、样式、手动修改和锁定区域。开始前在项目的 `backups/before-rescan-*.json` 中保存配置备份，原始图片不变。
+- **仅处理未完成页面**：保留已完成结果，继续尚未识别或上次重扫未完成的页面。
+
+每完成一页自动保存。取消或单页失败时，该页旧结果仍保留，后续可选「仅处理未完成页面」续做。导出始终包含全部页面，未识别的页面保留原图。
+
+## 在其他 Linux 电脑安装
+
+需要 Python 3.11–3.13（当前验证 3.12）、fontconfig、可用的中英文字体与浏览器。项目中不分发商业字体。字体可安装至 `~/.local/share/fonts`，运行 `fc-cache -f` 后重启应用。
 
 ```bash
-set FLAGS_use_mkldnn=0
-set PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m ai_text_sharpener.studio
 ```
 
-## Quick start — single image
+在有 systemd 用户服务的桌面 Linux 上安装应用入口：
 
 ```bash
-ai-text-sharpener input.jpg -o output.png \
-  --title-font "Microsoft YaHei Bold" \
-  --body-font "Microsoft YaHei"
+.venv/bin/python scripts/install-linux.py
+./scripts/launch-studio.sh
 ```
 
-Output: `output.png` (rasterized) + `output.svg` (vector).
-
-## Editable workflow
-
-1. Generate a draft + review JSON:
-   ```bash
-   ai-text-sharpener input.jpg -o draft.png --review-json review.json
-   ```
-2. Open the browser editor:
-   ```bash
-   ai-text-sharpener-editor input.jpg review.json --output-png final.png
-   ```
-   Click into a text region, fix OCR mistakes, drag to reposition, right-click selected characters for super/subscript/color. Auto-saves as you go.
-3. Hit **Render** (or just let auto-render fire) for the final `final.png` + `final.svg`.
-
-## Batch PPT workflow
-
-Import a `.pptx` deck, edit slide-by-slide, and export back to a flat-image PPTX:
+服务按需启动，未设置登录自动启动。停止服务：
 
 ```bash
-ai-text-sharpener-ppt deck.pptx --output-dir examples/ppt_reviews/deck
-# Opens the multi-slide editor automatically.
-# When done, click "Export PPT" in the toolbar.
+systemctl --user stop ai-text-sharpener
 ```
 
-The exported PPTX has each slide as a full-bleed rendered PNG. Re-edit the source PPT if you need PowerPoint-level granularity; the exported deck is for distribution.
+不使用 systemd 时，可直接运行 `ai-text-sharpener-studio --port 8766`。服务器仅监听 `127.0.0.1`。项目默认位于 `~/.local/share/ai-text-sharpener/projects/`，遵循 `XDG_DATA_HOME`，也可通过 `--data-dir` 指定目录。备份请复制整个项目文件夹，包含原图与 `project.json`；单独 JSON 不包含原图。项目修改源码路径后需重新运行安装脚本。
 
-## Importing custom fonts
+当前 Linux 环境的依赖快照见 `requirements-linux.lock.txt`。这是 Python 3.12 / Linux 环境快照，不是 Windows 通用锁文件。
 
-Drop any `.ttf` / `.otf` / `.ttc` file into `fonts/` (created automatically at the project root on first editor launch) and refresh the browser. The font's internal family name appears under the **Imported** group in the Inspector's font picker, and is used by both the canvas preview and the final SVG render.
+## 开发与验证
 
-## Documentation
+```bash
+.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python -m pytest -q
+```
 
-- [docs/plans/2026-05-18-design.md](docs/plans/2026-05-18-design.md) — full design rationale
-- [docs/plans/2026-05-18-mvp-implementation.md](docs/plans/2026-05-18-mvp-implementation.md) — task-by-task implementation plan
-- [docs/mvp-validation-report.md](docs/mvp-validation-report.md) — per-slide validation results
-- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, project layout, conventions
+Studio 核心模块：`typography.py`（真实字形与布局）、`fidelity.py`（匹配与背景修复）、`studio_project.py`（持久化及矢量导出）、`studio.py`（本地服务）、`web/`（界面）。验证记录见 [docs/studio-validation.md](docs/studio-validation.md)。
+
+旧版 PaddleOCR 命令行和编辑器仍保留。需额外安装 `pip install -e '.[paddle]'`，使用方式见 [旧版工作流](docs/legacy-workflow.md)。旧工作流与 Studio 的项目格式、导出能力不同；旧文档中的原生文本编辑指旧编辑器内部，不表示导出的 PPTX 可原生编辑文字。
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0，见 [LICENSE](LICENSE)。
+
+### 公式识别与二维重绘（可选，本机 CPU）
+
+在已有 Python 3.11 / 3.12 Studio 环境中运行：
+
+```bash
+.venv/bin/python scripts/install-formulas.py
+systemctl --user restart ai-text-sharpener.service
+```
+
+安装器下载约 260 MB 模型和 MathJax，另外创建 `.venv-formula`；不修改普通文字识别环境。需 Node.js 18+（可用 `--node /路径/node` 指定；本机 Codex 自带 Node 也可自动发现）。组件安装后，处理图片时不联网、不上传图片、不需要 API Key。模型、运行时配置和来源校验位于 `~/.local/share/ai-text-sharpener/formula/`。
+
+识别当前页 / 整个 PPT 时，先检测完整公式区域，合并其中的 OCR 碎片，再生成 LaTeX 候选。公式默认完整保留原图；在右侧核对 LaTeX 后，勾选「重绘此区域」即可预览和导出。也可手动画框，将「区域类型」改为「公式」，调整框覆盖整个公式后点击「识别公式」。修改 LaTeX 自动更新预览，「匹配公式位置」重新拟合尺寸、位置和颜色。
+
+公式使用独立数学字体生成 SVG 路径，支持分数、上下标、积分、根号、矩阵和分段结构；可调整字号、笔画粗细、颜色和位置。当前不能像普通文字一样匹配任意系统字体。公式 OCR 仍可能认错字符或结构，相似度不是正确率，不会据此自动启用公式。保留原图的公式依然是位图；启用重绘的公式才是矢量轮廓。模型本身未经过本项目微调。
+
+自动文字拟合若得分低于 0.35 或明显超出原字范围，会保留原图；该限制不阻止手动改字、移动或放大。旧版项目导出也会过滤失败的自动拟合。已有项目需重新扫描才能生成新的完整公式区域。
+
+实现来源：[Pix2Text MFD](https://huggingface.co/breezedeus/pix2text-mfd-1.5)、[RapidLaTeXOCR](https://github.com/RapidAI/RapidLaTeXOCR)、[MathJax](https://github.com/mathjax/MathJax-src)。安装时固定版本与模型哈希；模型不随源码打包。MFD 模型卡标注 MIT，ONNX 元数据同时带有 Ultralytics AGPL-3.0 信息，二者不一致已记录，重新分发模型前需另行核实。MathJax 与 RapidLaTeXOCR 的许可文件保留在安装目录。

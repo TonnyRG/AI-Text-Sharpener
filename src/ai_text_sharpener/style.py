@@ -63,14 +63,13 @@ def sample_background_color(img: np.ndarray, rect: Rect, ring_px: int = 3) -> RG
     x, y, w, h = rect
     x0, y0 = max(0, x - ring_px), max(0, y - ring_px)
     x1, y1 = min(w_img, x + w + ring_px), min(h_img, y + h + ring_px)
-    outer = img[y0:y1, x0:x1].copy()
+    outer = img[y0:y1, x0:x1]
     inner_x0, inner_y0 = x - x0, y - y0
-    outer[inner_y0:inner_y0 + h, inner_x0:inner_x0 + w] = 0
-    flat = outer.reshape(-1, 3)
-    mask = flat.any(axis=1)
+    mask = np.ones(outer.shape[:2], dtype=bool)
+    mask[max(0, inner_y0):inner_y0 + h, max(0, inner_x0):inner_x0 + w] = False
     if not mask.any():
-        return (255, 255, 255)
-    return tuple(int(c) for c in np.median(flat[mask], axis=0))
+        return tuple(int(c) for c in np.median(outer.reshape(-1, 3), axis=0)) if outer.size else (255, 255, 255)
+    return tuple(int(c) for c in np.median(outer[mask], axis=0))
 
 
 def extract_style(img: np.ndarray, region: TextRegion) -> RegionStyle:

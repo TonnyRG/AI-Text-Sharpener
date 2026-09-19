@@ -32,7 +32,10 @@ def soft_erase(
 
         mask = np.ones((y1 - y0, x1 - x0), dtype=np.float32)
         if feather_px > 0:
-            mask = cv2.GaussianBlur(mask, (0, 0), sigmaX=feather_px, sigmaY=feather_px)
+            # Zero border supplies a real transition. Blurring an all-one
+            # crop with OpenCV's default reflected border stays constant.
+            mask = cv2.GaussianBlur(mask, (0, 0), sigmaX=feather_px, sigmaY=feather_px,
+                                    borderType=cv2.BORDER_CONSTANT)
             mask = np.clip(mask, 0, 1)
 
         alpha = mask[..., None]

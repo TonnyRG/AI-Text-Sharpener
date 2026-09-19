@@ -30,6 +30,7 @@ fonts/
 # Top-level scratch / diagnostic output (regeneratable)
 output/
 tmp/
+audit/
 
 # Local PPT inputs + extracted assets (not part of the repo)
 PPT/
@@ -48,3 +49,5 @@ examples/before_after/
 # examples/ppt_reviews — full review projects (slides, drafts, finals); per-project,
 # can be huge.  Don't commit; users regenerate from their own PPTs.
 examples/ppt_reviews/
+
+.venv-formula/
