@@ -22,9 +22,9 @@
   <section class="workspace">
     <div class="toolbar">
       <div><strong id="pageTitle">未打开项目</strong><small id="pageMeta">导入文件或选择已有项目</small></div>
-      <div class="actions"><button id="undoBtn" title="撤销 Ctrl+Z" disabled>↶</button><button id="redoBtn" title="重做 Ctrl+Shift+Z / Ctrl+Y" disabled>↷</button><button id="analyzeBtn" disabled>识别当前页</button><button id="exportBtn" disabled>更多导出 ↓</button></div>
+      <div class="actions"><div class="history-actions"><button id="undoBtn" title="撤销 Ctrl+Z" disabled>↶</button><button id="redoBtn" title="重做 Ctrl+Shift+Z / Ctrl+Y" disabled>↷</button></div><button id="exportBtn" class="primary" disabled>导出…</button></div>
     </div>
-    <div class="batchbar"><button id="analyzeAllBtn" class="primary" disabled title="选择重新识别全部页面，或仅处理未完成页面">识别整个 PPT</button><button id="exportAllBtn" disabled>导出整个 PPT</button><span id="batchSummary" class="muted">导入后可批量处理全部页面</span></div>
+    <div class="batchbar"><span class="toolbar-label">识别</span><button id="analyzeBtn" disabled>当前页</button><button id="analyzeAllBtn" disabled title="选择重新识别全部页面，或仅处理未完成页面">全部页面…</button><span id="batchSummary" class="muted">导入后可批量处理全部页面</span></div>
     <div id="welcome" class="welcome">
       <h1>导入文件</h1>
       <p>可拖入图片或 PPTX，也可从左侧选择已有项目。</p>
@@ -38,42 +38,78 @@
     </div>
     <div id="jobBar" class="jobbar" hidden><div><span class="spinner"></span><span id="jobMessage">处理中…</span><button id="cancelBtn">取消</button></div><progress id="progress" max="100" value="0"></progress></div>
   </section>
-  <aside class="inspector">
-    <div class="section-top"><span>文字属性</span></div>
-    <div id="noSelection" class="no-selection"><strong>未选择文字区域</strong><p>点击文字框或左侧列表进行编辑。</p></div>
+  <aside class="inspector" aria-label="区域属性">
+    <div class="inspector-title"><strong>区域属性</strong><span>编辑后自动预览</span></div>
+    <div id="noSelection" class="no-selection"><strong>未选择文字区域</strong><p>点击画布中的文字框或左侧列表。</p></div>
     <div id="properties" hidden>
-      <div class="region-head"><strong id="regionName">区域</strong><span id="fitBadge" class="badge">待匹配</span></div>
-      <label class="field">区域类型<select id="kindField"><option value="text">普通文字</option><option value="formula">公式</option></select></label>
-      <div id="formulaPanel" hidden><label class="field">LaTeX 公式<textarea id="latexField" rows="4" spellcheck="false" placeholder="例如：E=mc^2"></textarea></label><div class="fit-buttons"><button id="recognizeFormulaBtn" class="primary">识别公式</button><button id="fitFormulaBtn">匹配公式位置</button></div><p class="muted">检测到的公式先保留原图；识别或输入 LaTeX 后，勾选「重绘此区域」查看效果。核对上下标、分数和符号。当前采用数学字体，可调整字号、笔画与位置。</p></div>
-      <label id="plainTextLabel" class="field">文字内容<textarea id="textField" rows="2" placeholder="输入这一行的正确文字"></textarea></label>
-      <div id="originalText" class="muted original-text"></div>
-      <div class="toggle-row"><label><input id="enabledField" type="checkbox"> 重绘此区域</label><label><input id="lockedField" type="checkbox"> 锁定样式</label></div>
-      <hr>
-      <div class="section-top"><span>字体与样式</span><span id="scoreText" class="muted"></span></div>
-      <input id="fontSearch" type="search" placeholder="搜索本机字体…" aria-label="搜索字体">
-      <select id="fontField" aria-label="字体及字重"></select>
-      <div class="two-col"><label class="field">字号 / px<input id="sizeField" type="number" min="4" max="1000" step="0.5"></label><label class="field">字距 / px<input id="spacingField" type="number" min="-300" max="300" step="0.25"></label></div>
-      <label class="field">笔画加粗 / px<input id="strokeField" type="number" min="0" max="12" step="0.05" value="0"></label>
-      <div class="muted">0 为字体原始字重。偏细时可小幅增加，如 0.1–0.5；需变细时选择较轻字重。</div>
-      <label class="color-field">文字颜色<input id="colorField" type="color"><span id="colorValue"></span></label>
-      <div class="fit-buttons"><button id="fitBtn" class="primary">自动匹配字体</button><button id="fitFontBtn">按所选字体拟合</button></div>
-      <div id="alternatives" class="alternatives"></div>
-      <hr>
-      <div class="section-top"><span>位置与背景</span><span class="muted">原图像素坐标</span></div>
-      <div class="two-col"><label class="field">X<input id="xField" type="number" step="0.5"></label><label class="field">Y<input id="yField" type="number" step="0.5"></label></div>
-      <div class="section-top ocr-heading"><span>OCR 框 / 原字范围</span><button id="editBoxBtn" type="button">调整 OCR 框</button></div>
-      <div class="two-col"><label class="field">框 X<input id="boxXField" type="number" min="0" step="any"></label><label class="field">框 Y<input id="boxYField" type="number" min="0" step="any"></label></div>
-      <div class="two-col"><label class="field">框宽<input id="boxWField" type="number" min="3" step="any"></label><label class="field">框高<input id="boxHField" type="number" min="3" step="any"></label></div>
-      <p class="muted">拖动橙色框的边或角调整大小，拖动框内部移动范围。OCR 框决定识别与擦除范围，不会拉伸或移动重绘文字；改框后可重新匹配字体。清空文字内容可擦除原字，删除区域则恢复原图。</p>
-      <label class="field">背景处理<select id="eraseField"><option value="gradient">纯色 / 渐变补全</option><option value="inpaint">纹理局部修复</option><option value="none">保留背景，仅叠字</option></select></label>
-      <p id="fitNote" class="fit-note"></p>
-      <button id="deleteRegion" class="danger quiet">删除区域，保留原图</button>
+      <div class="region-summary">
+        <div class="region-head"><strong id="regionName">区域</strong><span id="fitBadge" class="badge">待匹配</span></div>
+        <div class="toggle-row"><label><input id="enabledField" type="checkbox"> 重绘此区域</label><label title="锁定后不参与自动匹配或画布拖动"><input id="lockedField" type="checkbox"> 锁定样式</label></div>
+      </div>
+      <details class="property-section" open>
+        <summary><span>内容</span></summary>
+        <div class="section-body">
+          <label class="field inline-field">区域类型<select id="kindField"><option value="text">普通文字</option><option value="formula">公式</option></select></label>
+          <label id="plainTextLabel" class="field">文字内容<textarea id="textField" rows="2" placeholder="输入这一行的正确文字"></textarea></label>
+          <div id="formulaPanel" hidden>
+            <label class="field">LaTeX 公式<textarea id="latexField" rows="4" spellcheck="false" placeholder="例如：E=mc^2"></textarea></label>
+            <div class="fit-buttons"><button id="recognizeFormulaBtn">重新识别公式</button><button id="fitFormulaBtn">匹配公式位置</button></div>
+            <p class="field-help">公式默认保留原图，核对后开启「重绘此区域」。</p>
+          </div>
+          <details class="field-details"><summary>识别原文与说明</summary><div id="originalText" class="muted original-text"></div><p class="field-help">清空文字可擦除原字；删除区域会恢复原图。公式采用数学字体，请核对上下标、分数与符号。</p></details>
+        </div>
+      </details>
+      <details class="property-section" open>
+        <summary><span>字体与样式</span><span id="scoreText" class="section-meta"></span></summary>
+        <div class="section-body">
+          <div id="fontControls">
+            <label class="field" for="fontField">字体 / 字重</label>
+            <input id="fontSearch" type="search" placeholder="搜索本机字体…" aria-label="搜索字体">
+            <select id="fontField" aria-label="字体及字重"></select>
+          </div>
+          <div class="two-col"><label class="field">字号 <span>px</span><input id="sizeField" type="number" min="4" max="1000" step="0.5"></label><label class="field">字距 <span>px</span><input id="spacingField" type="number" min="-300" max="300" step="0.25"></label></div>
+          <div class="two-col style-row"><label class="field">笔画加粗 <span>px</span><input id="strokeField" type="number" min="0" max="12" step="0.05" value="0" title="0 为字体原始字重；需变细时选择较轻字重"></label><label class="field">文字颜色<div class="color-control"><input id="colorField" type="color" aria-label="文字颜色"><span id="colorValue"></span></div></label></div>
+          <div id="fontMatchActions" class="matching-actions"><button id="fitBtn" class="primary">自动匹配字体</button><button id="fitFontBtn">按当前字体匹配</button></div>
+          <details id="alternativesPanel" class="field-details" hidden><summary>其他字体候选</summary><div id="alternatives" class="alternatives"></div></details>
+          <details class="field-details"><summary>匹配说明</summary><p id="fitNote" class="fit-note"></p><p class="field-help">笔画加粗为 0 时使用字体原始字重；偏细可增加 0.1–0.5 px，需变细时选择较轻字重。</p></details>
+        </div>
+      </details>
+      <details class="property-section" open>
+        <summary><span>文字位置</span><span class="section-meta">px</span></summary>
+        <div class="section-body"><div class="two-col"><label class="field">X<input id="xField" type="number" step="0.5"></label><label class="field">Y<input id="yField" type="number" step="0.5"></label></div><p class="field-help">也可拖动绿色文字框调整。</p></div>
+      </details>
+      <details id="sourceSection" class="property-section">
+        <summary><span>原字范围与背景</span><span class="section-meta">OCR 框</span></summary>
+        <div class="section-body">
+          <button id="editBoxBtn" class="full-width" type="button" aria-pressed="false">在画布上调整范围</button>
+          <div class="two-col"><label class="field">框 X<input id="boxXField" type="number" min="0" step="any"></label><label class="field">框 Y<input id="boxYField" type="number" min="0" step="any"></label></div>
+          <div class="two-col"><label class="field">宽度<input id="boxWField" type="number" min="3" step="any"></label><label class="field">高度<input id="boxHField" type="number" min="3" step="any"></label></div>
+          <label class="field">背景处理<select id="eraseField"><option value="gradient">纯色 / 渐变补全</option><option value="inpaint">纹理局部修复</option><option value="none">保留背景，仅叠字</option></select></label>
+          <details class="field-details"><summary>如何调整原字范围</summary><p class="field-help">拖动橙色框的边角调整大小，拖动框内移动。此范围用于识别与擦除，不会移动或拉伸重绘文字；调整后可重新匹配。</p></details>
+        </div>
+      </details>
+      <div class="region-footer"><button id="deleteRegion" class="danger quiet">删除区域</button><span>恢复此处原图</span></div>
     </div>
   </aside>
 </main>
 <div id="toast" class="toast" role="status" hidden></div>
 <dialog id="batchDialog"><div class="dialog-head"><h2>识别整个 PPT</h2><button id="closeBatch" class="icon-btn">×</button></div><p id="batchDialogSummary"></p><div class="export-options"><button id="rescanAllBtn" class="primary"><strong>重新识别全部页面</strong><span>重新识别文字并匹配字体，将替换所有页面的文字区域、样式及手动修改（包括锁定区域）。</span></button><button id="resumeBatchBtn"><strong>仅处理未完成页面</strong><span>保留已完成的页面；继续尚未识别或上次重新识别未完成的页面。</span></button></div><small>重新识别前会自动备份项目配置。中途取消时，未完成页保留原结果，可以稍后继续。</small></dialog>
-<dialog id="exportDialog"><div class="dialog-head"><h2>导出</h2><button id="closeExport" class="icon-btn">×</button></div><div class="export-options"><button id="svgExport"><strong>SVG 矢量图 ↗</strong><span>当前页 · 文字轮廓</span></button><button id="pngExport"><strong>PNG 图片 ↗</strong><span>当前页 · 原始分辨率，无有损压缩</span></button><button id="pptExport"><strong>导出整个 PPT ↗</strong><span>全部页面 · SVG 轮廓 + PNG 兼容预览</span></button><button id="jsonExport"><strong>保存编辑数据 ↗</strong><span>项目 JSON · 另存配置备份</span></button></div><small>SVG / PPTX 中的文字为轮廓，继续改字请回到本应用。<br>旧版演示软件可能使用 PNG 兼容预览。</small></dialog>
-<dialog id="helpDialog"><div class="dialog-head"><h2>使用说明</h2><button id="closeHelp" class="icon-btn">×</button></div><ol><li>导入图片，点击「识别当前页」或「识别整个 PPT」。识别与拟合在本机运行。</li><li>核对识别文字；编辑后会自动更新预览。若想重新贴合原图，再点「自动匹配字体」。</li><li>调整字体、字重、字号、字距与位置；绿色框移动重绘文字，橙色 OCR 框控制原字范围，可拖动边角调整。</li><li>使用「滑动对比」检查。复杂图片背景可尝试「纹理局部修复」。</li><li>导出 SVG、PNG 或 PPTX。所有页面与修改自动保存在本机。</li><li>Ctrl+Z 撤销，Ctrl+Shift+Z 或 Ctrl+Y 重做；也可点击顶部 ↶ / ↷。输入框编辑、移动、调整 OCR 框、删除及匹配结果均可撤销。每页保留最近 80 步，切换页面、自动保存和导出不会清空；刷新窗口后清空。</li></ol><p>此版重点支持水平、单行文字。公式由独立模型检测，先完整保留原图；可识别为 LaTeX 后按二维结构重绘。复杂艺术字、倾斜文字与同一行多种样式需要手动画框拆分、校正；低置信识别默认保留原图。拟合分数用于比较候选，不是正确率。</p><p id="dataPath" class="muted"></p></dialog>
+<dialog id="exportDialog" aria-labelledby="exportTitle">
+  <div class="dialog-head"><h2 id="exportTitle">导出</h2><button id="closeExport" class="icon-btn" aria-label="关闭导出">×</button></div>
+  <fieldset class="export-fieldset"><legend>页面范围</legend><div class="scope-options">
+    <label><input type="radio" name="exportScope" value="current"><span><strong>当前页</strong><small id="exportCurrentLabel"></small></span></label>
+    <label><input type="radio" name="exportScope" value="all" checked><span><strong>全部页面</strong><small id="exportAllLabel"></small></span></label>
+  </div></fieldset>
+  <fieldset class="export-fieldset"><legend>文件格式</legend><div class="format-options">
+    <label><input type="radio" name="exportFormat" value="pptx" checked><span class="format-tag">PPTX</span><span><strong>PowerPoint</strong><small>矢量文字轮廓，附兼容预览</small></span></label>
+    <label><input type="radio" name="exportFormat" value="svg"><span class="format-tag">SVG</span><span><strong>矢量图</strong><small>保持文字轮廓，放大不模糊</small></span></label>
+    <label><input type="radio" name="exportFormat" value="png"><span class="format-tag">PNG</span><span><strong>图片</strong><small>原始分辨率，无损图片</small></span></label>
+  </div></fieldset>
+  <p id="exportSummary" class="export-summary" aria-live="polite"></p>
+  <p class="export-note">SVG / PPTX 中的文字为轮廓，继续改字请回到本应用。旧版演示软件可能使用 PNG 兼容预览。</p>
+  <div class="dialog-actions"><button id="cancelExport">取消</button><button id="confirmExport" class="primary">导出</button></div>
+  <div class="backup-row"><span>编辑数据备份 · 全部页面</span><button id="jsonExport" class="quiet">保存 JSON</button></div>
+</dialog>
+<dialog id="helpDialog"><div class="dialog-head"><h2>使用说明</h2><button id="closeHelp" class="icon-btn">×</button></div><ol><li>导入图片，在「识别」栏选择「当前页」或「全部页面」。识别与拟合在本机运行。</li><li>核对识别文字；编辑后会自动更新预览。若想重新贴合原图，再点「自动匹配字体」。</li><li>调整字体、字重、字号、字距与位置；绿色框移动重绘文字，橙色 OCR 框控制原字范围，可拖动边角调整。</li><li>使用「滑动对比」检查。复杂图片背景可尝试「纹理局部修复」。</li><li>点击「导出」，选择页面范围和 PPTX、SVG 或 PNG 格式。全部页面的 SVG / PNG 会按页码打包为 ZIP。所有修改自动保存在本机。</li><li>Ctrl+Z 撤销，Ctrl+Shift+Z 或 Ctrl+Y 重做；也可点击顶部 ↶ / ↷。输入框编辑、移动、调整 OCR 框、删除及匹配结果均可撤销。每页保留最近 80 步，切换页面、自动保存和导出不会清空；刷新窗口后清空。</li></ol><p>此版重点支持水平、单行文字。公式由独立模型检测，先完整保留原图；可识别为 LaTeX 后按二维结构重绘。复杂艺术字、倾斜文字与同一行多种样式需要手动画框拆分、校正；低置信识别默认保留原图。拟合分数用于比较候选，不是正确率。</p><p id="dataPath" class="muted"></p></dialog>
 <script src="/app.js"></script>
 </body></html>

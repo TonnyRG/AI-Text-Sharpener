@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 let token = '', fonts = [], project = null, pageId = null, selectedId = null;
 let mode = 'original', dirty = false, busy = false, mutation = 0, saving = null;
 let saveTimer, toastTimer, newImport = false, drawing = false, pointer = null;
-let undo = [], redo = [], pendingDownload = null;
+let undo = [], redo = [];
 const pageHistories = new Map();
 let historyProjectId = null, editGroup = null;
 let previewTimer, previewRunning = false, previewVersion = 0, previewUrl = null, previewAutoShow = false;
@@ -27,8 +27,8 @@ async function api(path, body) {
 function safeRun(fn) { return (...args) => Promise.resolve().then(() => fn(...args)).catch(e => toast(e.message, true)); }
 function setBusy(value) {
   busy = value; document.body.classList.toggle('busy', value);
-  for (const id of ['analyzeBtn','analyzeAllBtn','exportAllBtn','exportBtn','previewBtn','drawBtn','importBtn','newBtn','projectSelect','demoBtn','fitBtn','fitFontBtn','recognizeFormulaBtn','fitFormulaBtn','svgExport','pngExport','pptExport','jsonExport']) {
-    $(id).disabled = value || (['analyzeBtn','analyzeAllBtn','exportAllBtn','exportBtn','previewBtn','drawBtn'].includes(id) && !page());
+  for (const id of ['analyzeBtn','analyzeAllBtn','exportBtn','previewBtn','drawBtn','importBtn','newBtn','projectSelect','demoBtn','fitBtn','fitFontBtn','recognizeFormulaBtn','fitFormulaBtn','confirmExport','jsonExport']) {
+    $(id).disabled = value || (['analyzeBtn','analyzeAllBtn','exportBtn','previewBtn','drawBtn'].includes(id) && !page());
   }
   $('undoBtn').disabled = value || !undo.length; $('redoBtn').disabled = value || !redo.length;
 }
@@ -70,7 +70,7 @@ function markDirty() {
 function resetPreview() {
   clearTimeout(previewTimer); previewVersion++; previewAutoShow = false;
   if(previewUrl)URL.revokeObjectURL(previewUrl);previewUrl=null;
-  editingBox=false;pointer=null;$('editBoxBtn').classList.remove('primary');
+  editingBox=false;pointer=null;updateBoxButton();
 }
 function queuePreview() {
   previewVersion++; previewAutoShow=true; clearTimeout(previewTimer);
@@ -138,7 +138,7 @@ function renderProject() {
   $('pageMeta').textContent = p ? `${p.width} × ${p.height} px · ${project.name}` : '导入文件或选择已有项目';
   $('pageCount').textContent = project?.pages.length || 0;
   const allPages=project?.pages||[], processed=allPages.filter(p=>!p.pending_rescan&&(p.status==='review'||p.regions.length)).length;
-  $('batchSummary').textContent=allPages.length?`${processed} / ${allPages.length} 页已完成 · 可重新识别全部或继续未完成页面`:'导入后可批量处理全部页面';
+  $('batchSummary').textContent=allPages.length?`${processed} / ${allPages.length} 页已处理`:'导入后可批量处理全部页面';
   $('pages').replaceChildren();
   for (const item of project?.pages || []) {
     const button = document.createElement('button'); button.className = `page-card ${item.id === pageId ? 'selected' : ''}`;
@@ -156,7 +156,7 @@ function renderProject() {
     else { $('resultImage').removeAttribute('src'); mode = 'original'; }
     $('overlay').setAttribute('viewBox', `0 0 ${p.width} ${p.height}`);
     $('sheet').style.aspectRatio = `${p.width}/${p.height}`;
-    $('canvasHint').textContent = p.regions.length ? '编辑后自动更新预览；拖动绿色框移动文字，点击「调整 OCR 框」修改原字范围。' : '点击「识别当前页」或「识别整个 PPT」，或手动画框添加文字。';
+    $('canvasHint').textContent = p.regions.length ? '编辑后自动更新预览；拖动绿色框移动文字，展开「原字范围与背景」调整 OCR 框。' : '在「识别」栏选择「当前页」或「全部页面」，或手动画框添加文字。';
   }
   renderRegions(); renderInspector(); setMode(mode); setBusy(busy);
   requestAnimationFrame(resize);
@@ -183,7 +183,7 @@ function renderInspector() {
   if(!r)return;
   const math=r.kind==='formula';$('kindField').value=math?'formula':'text';$('formulaPanel').hidden=!math;$('plainTextLabel').hidden=math;
   $('latexField').value=r.latex||'';
-  for(const id of ['fontSearch','fontField','fitBtn','fitFontBtn'])$(id).hidden=math;
+  for(const id of ['fontControls','fontMatchActions'])$(id).hidden=math;
   $('spacingField').closest('label').hidden=math;
   $('regionName').textContent=`区域 ${page().regions.indexOf(r)+1}`;
   renderFitStatus(r);
@@ -197,6 +197,7 @@ function renderInspector() {
   $('scoreText').textContent=r.score==null?'':`相似度 ${(r.score*100).toFixed(1)}`;
   $('fitNote').textContent=r.fit_note||'可尝试不同字体候选，再对照原图微调。';
   fontOptions(); $('alternatives').replaceChildren();
+  $('alternativesPanel').hidden=math||!r.alternatives?.length;
   for(const c of r.alternatives||[]) {
     const btn=document.createElement('button');btn.className='alternative';
     const label=document.createElement('span'); label.textContent=c.font_label;
@@ -217,7 +218,7 @@ function changeField(id,key,convert=v=>v) {
     const value=convert(raw); if(typeof value==='number'&&!Number.isFinite(value))return;
     if(r[key]===value)return;
     history(['text','latex','font_size','letter_spacing','stroke_width','x','y'].includes(key)?id:null);r[key]=value;
-    if(['text','latex','font_id','font_size','letter_spacing','stroke_width','x','y'].includes(key)){r.score=null;r.fit_status='edited';r.alternatives=[];$('alternatives').replaceChildren();}
+    if(['text','latex','font_id','font_size','letter_spacing','stroke_width','x','y'].includes(key)){r.score=null;r.fit_status='edited';r.alternatives=[];$('alternatives').replaceChildren();$('alternativesPanel').hidden=true;}
     if(key==='enabled'&&r.kind!=='formula'){r.score=null;r.fit_status='edited';}
     if(key==='text')r.text=r.text.replace(/[\r\n]+/g,' ');
     if(key==='color')$('colorValue').textContent=value.toUpperCase();
@@ -242,7 +243,7 @@ const boxFields=['boxXField','boxYField','boxWField','boxHField'];
 function renderBoxFields(){const r=region();if(r)boxFields.forEach((id,i)=>$(id).value=Math.round(r.bbox[i]*100)/100);}
 function updateBox(bbox){
   const r=region();r.bbox=bbox;r.score=null;r.fit_status='edited';r.alternatives=[];
-  $('alternatives').replaceChildren();renderFitStatus(r);renderBoxFields();
+  $('alternatives').replaceChildren();$('alternativesPanel').hidden=true;renderFitStatus(r);renderBoxFields();
 }
 boxFields.forEach((id,index)=>$(id).addEventListener('input',()=>{
   if(!region()||busy||$(id).value===''||!$(id).checkValidity())return;
@@ -250,7 +251,15 @@ boxFields.forEach((id,index)=>$(id).addEventListener('input',()=>{
   if(box[0]<0||box[1]<0||box[2]<3||box[3]<3||box[0]+box[2]>page().width||box[1]+box[3]>page().height)return;
   history(id);updateBox(box);markDirty();drawOverlay();
 }));
-$('editBoxBtn').onclick=()=>{editingBox=!editingBox;drawing=false;$('drawBtn').classList.remove('primary');document.body.classList.remove('drawing-mode');$('editBoxBtn').classList.toggle('primary',editingBox);$('boxesChk').checked=true;drawOverlay();};
+function updateBoxButton() {
+  $('editBoxBtn').classList.toggle('primary',editingBox);
+  $('editBoxBtn').setAttribute('aria-pressed',String(editingBox));
+  $('editBoxBtn').textContent=editingBox?'完成范围调整':'在画布上调整范围';
+}
+$('sourceSection').addEventListener('toggle',()=>{
+  if(!$('sourceSection').open&&editingBox){editingBox=false;updateBoxButton();drawOverlay();}
+});
+$('editBoxBtn').onclick=()=>{editingBox=!editingBox;drawing=false;$('drawBtn').classList.remove('primary');document.body.classList.remove('drawing-mode');updateBoxButton();$('boxesChk').checked=true;drawOverlay();};
 
 function rect(x,y,w,h,classes) {
   const el=document.createElementNS('http://www.w3.org/2000/svg','rect');
@@ -354,13 +363,12 @@ async function watchJob(id, before=null) {
       if(before)rememberJobChanges(before);
       selectedId=page()?.regions.some(r=>r.id===selected)?selected:page()?.regions[0]?.id;
       renderInspector();renderRegions();setMode(keepMode==='compare'?'compare':'result');
-      if(job.status==='error'){pendingDownload=null;throw new Error(job.message);}
-      if(job.status==='cancelled'){pendingDownload=null;toast(job.message);return;}
+      if(job.status==='error')throw new Error(job.message);
+      if(job.status==='cancelled'){toast(job.message);return;}
       $('saveState').textContent='· 已保存';
       if(job.download)download(job.download);
-      if(pendingDownload){download(asset(`${pageId}-result.${pendingDownload}`,true));pendingDownload=null;}
       if(job.kind==='analyze_all')$('batchSummary').textContent=job.message;
-      toast(job.kind==='analyze_all'?job.message:job.warnings?.length?job.warnings.slice(0,2).join('；'):'已完成，可切换滑动对比检查效果。');
+      toast(['analyze_all','export'].includes(job.kind)?job.message:job.warnings?.length?job.warnings.slice(0,2).join('；'):'已完成，可切换滑动对比检查效果。');
       return;
     }
     await new Promise(resolve=>setTimeout(resolve,450));
@@ -377,13 +385,13 @@ async function upload(files){
       const data=await response.json();if(!response.ok)throw new Error(data.error);
       const oldCount=pid&&project?project.pages.length:0;project=data;pid=data.id;firstNew??=data.pages[oldCount]?.id;
     }
-    await refreshProjects();await loadProject(pid,firstNew);toast('导入完成。点击「识别当前页」或「识别整个 PPT」开始。');
+    await refreshProjects();await loadProject(pid,firstNew);toast('导入完成。在「识别」栏选择「当前页」或「全部页面」开始。');
   }finally{setBusy(false);$('fileInput').value='';}
 }
 $('fileInput').onchange=safeRun(()=>upload([...$('fileInput').files]));
 for(const id of ['importBtn','welcomeImport'])$(id).onclick=()=>{newImport=false;$('fileInput').click();};
 $('newBtn').onclick=()=>{newImport=true;$('fileInput').click();};
-$('demoBtn').onclick=safeRun(async()=>{if(busy)return;await flush();setBusy(true);try{project=await api('/api/demo',{});await refreshProjects();await loadProject(project.id);toast('已加载测试示例，点击「识别当前页」或「识别整个 PPT」开始。');}finally{setBusy(false);}});
+$('demoBtn').onclick=safeRun(async()=>{if(busy)return;await flush();setBusy(true);try{project=await api('/api/demo',{});await refreshProjects();await loadProject(project.id);toast('已加载测试示例，在「识别」栏选择「当前页」或「全部页面」开始。');}finally{setBusy(false);}});
 $('projectSelect').onchange=safeRun(async()=>{const id=$('projectSelect').value;if(!id||busy)return;await flush();await loadProject(id);});
 $('analyzeBtn').onclick=safeRun(async()=>{const reset=!!page()?.regions.length;if(reset&&!confirm('重新识别将替换本页现有文字区域和手动修改。是否继续？'))return;await runJob('analyze',{reset});});
 $('analyzeAllBtn').onclick=()=>{
@@ -396,12 +404,11 @@ $('analyzeAllBtn').onclick=()=>{
 $('closeBatch').onclick=()=>$('batchDialog').close();
 $('rescanAllBtn').onclick=safeRun(async()=>{$('batchDialog').close();await runJob('analyze_all',{reset:true});});
 $('resumeBatchBtn').onclick=safeRun(async()=>{$('batchDialog').close();await runJob('analyze_all');});
-$('exportAllBtn').onclick=safeRun(()=>runJob('export'));
 $('fitBtn').onclick=safeRun(async()=>{const r=region();if(r?.locked)throw new Error('请先取消「锁定样式」。');if(r&&!r.enabled)throw new Error('请先勾选「重绘此区域」。');await runJob('fit',{region_id:selectedId});});
 $('fitFontBtn').onclick=safeRun(async()=>{const r=region();if(!r||r.locked||!r.enabled)throw new Error('请启用此区域并取消锁定。');await runJob('fit',{region_id:selectedId,font_ids:[r.font_id]});});
 $('previewBtn').onclick=safeRun(()=>{previewAutoShow=true;return updatePreview();});
 $('cancelBtn').onclick=safeRun(async()=>{await api('/api/cancel',{});$('jobMessage').textContent='正在取消，请等待当前步骤结束…';});
-$('drawBtn').onclick=()=>{drawing=!drawing;editingBox=false;$('editBoxBtn').classList.remove('primary');document.body.classList.toggle('drawing-mode',drawing);$('drawBtn').classList.toggle('primary',drawing);if(drawing){setMode('original');$('canvasHint').textContent='在原图上拖出一个单行文字框，然后输入正确文字。';}};
+$('drawBtn').onclick=()=>{drawing=!drawing;editingBox=false;updateBoxButton();document.body.classList.toggle('drawing-mode',drawing);$('drawBtn').classList.toggle('primary',drawing);if(drawing){setMode('original');$('canvasHint').textContent='在原图上拖出一个单行文字框，然后输入正确文字。';}};
 $('boxesChk').onchange=drawOverlay;$('zoom').onchange=resize;$('sourceImage').onload=resize;
 new ResizeObserver(resize).observe($('viewport'));
 for(const b of $('viewModes').children)b.onclick=safeRun(async()=>{previewAutoShow=false;if(b.dataset.mode!=='original'&&!previewUrl)await updatePreview();setMode(b.dataset.mode);});
@@ -417,9 +424,27 @@ function undoRedo(reverse=false){
   markDirty();renderRegions();renderInspector();setBusy(false);
 }
 $('undoBtn').onclick=()=>undoRedo();$('redoBtn').onclick=()=>undoRedo(true);
-$('exportBtn').onclick=()=>$('exportDialog').showModal();$('closeExport').onclick=()=>$('exportDialog').close();
-for(const ext of ['svg','png'])$(ext+'Export').onclick=safeRun(async()=>{$('exportDialog').close();pendingDownload=ext;try{await runJob('render');}catch(e){pendingDownload=null;throw e;}});
-$('pptExport').onclick=safeRun(async()=>{$('exportDialog').close();await runJob('export');});
+function exportOptions() {
+  return {scope:document.querySelector('input[name="exportScope"]:checked').value,
+          format:document.querySelector('input[name="exportFormat"]:checked').value};
+}
+function renderExportOptions() {
+  if(!page())return;
+  const {scope,format}=exportOptions(), count=scope==='all'?project.pages.length:1;
+  const packed=scope==='all'&&format!=='pptx';
+  $('exportCurrentLabel').textContent=`第 ${project.pages.indexOf(page())+1} 页`;
+  $('exportAllLabel').textContent=`共 ${project.pages.length} 页`;
+  $('exportSummary').textContent=packed?`${count} 页 → ${count} 个 ${format.toUpperCase()} 文件，按页码打包为 ZIP。`:
+    `${count} 页 → 1 个 ${format.toUpperCase()} 文件。`;
+  $('confirmExport').textContent=`导出 ${packed?'ZIP':format.toUpperCase()}`;
+}
+$('exportBtn').onclick=()=>{if(busy||!page())return;renderExportOptions();$('exportDialog').showModal();};
+for(const id of ['closeExport','cancelExport'])$(id).onclick=()=>$('exportDialog').close();
+for(const input of document.querySelectorAll('#exportDialog input[type="radio"]'))input.onchange=renderExportOptions;
+$('confirmExport').onclick=safeRun(async()=>{
+  if(busy||!page())return;
+  const options=exportOptions();$('exportDialog').close();await runJob('export',options);
+});
 $('jsonExport').onclick=safeRun(async()=>{await flush();download(asset('project.json',true));$('exportDialog').close();});
 $('helpBtn').onclick=()=>$('helpDialog').showModal();$('closeHelp').onclick=()=>$('helpDialog').close();
 // Handle history synchronously, before the browser's native input undo.
@@ -438,7 +463,7 @@ document.addEventListener('keydown',safeRun(async e=>{
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();await flush();toast('已保存到本机');return;}
   if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();previewAutoShow=true;await updatePreview();return;}
   if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;
-  if(e.key==='Escape'){if(pointer?.moved)markDirty();drawing=false;editingBox=false;pointer=null;document.body.classList.remove('drawing-mode');$('drawBtn').classList.remove('primary');$('editBoxBtn').classList.remove('primary');drawOverlay();}
+  if(e.key==='Escape'){if(pointer?.moved)markDirty();drawing=false;editingBox=false;pointer=null;document.body.classList.remove('drawing-mode');$('drawBtn').classList.remove('primary');updateBoxButton();drawOverlay();}
   const directions={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
   if(directions[e.key]&&region()&&!busy&&!region().locked){e.preventDefault();history();const d=directions[e.key],step=e.shiftKey?10:1;region().fit_status='edited';region().score=null;region().x+=d[0]*step;region().y+=d[1]*step;markDirty();renderInspector();drawOverlay();}
 }));

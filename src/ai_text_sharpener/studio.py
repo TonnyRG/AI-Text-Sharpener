@@ -27,7 +27,7 @@ from PIL import Image, ImageFilter
 
 from .fidelity import crop_evidence, fit_region
 from .formula import combine_formula_regions, detect_formulas, fit_formula, recognize_formula, formula_available
-from .studio_project import StudioStore, compose_page, export_vector_pptx, image_inputs, render_page, validate_regions
+from .studio_project import StudioStore, compose_page, export_pages, image_inputs, render_page, validate_regions
 from .typography import candidate_fonts, font_catalog, outline_layout, svg_document
 
 WEB = Path(__file__).parent / "web"
@@ -180,6 +180,12 @@ class Studio:
                 raise ValueError("页面不存在。")
             if not project["pages"]:
                 raise ValueError("项目没有页面，请先导入 PPTX 或图片。")
+            if kind == "export":
+                if (payload.get("scope", "all") not in {"all", "current"}
+                        or payload.get("format", "pptx") not in {"pptx", "svg", "png"}):
+                    raise ValueError("无效的导出范围或格式。")
+                if payload.get("scope") == "current" and page is None:
+                    raise ValueError("页面不存在。")
             if not isinstance(payload.get("reset", False), bool):
                 raise ValueError("重新识别参数必须为布尔值。")
             if kind == "analyze" and page["regions"] and not payload.get("reset"):
@@ -265,10 +271,13 @@ class Studio:
                 progress("正在匹配公式尺寸和位置…", 70)
                 region.update(fit_formula(image, region))
             if kind == "export":
-                export_vector_pptx(directory, project, progress=progress)
-                for item in project["pages"]:
+                scope, format = payload.get("scope", "all"), payload.get("format", "pptx")
+                target = export_pages(directory, project, scope=scope, format=format,
+                                      page_id=payload.get("page_id"), progress=progress)
+                exported = project["pages"] if scope == "all" else [page]
+                for item in exported:
                     item["render_revision"] = project["revision"] + 1
-                self.job["download"] = f"/asset?project={project['id']}&file=export.pptx&download=1"
+                self.job["download"] = f"/asset?project={project['id']}&file={target.name}&download=1"
             else:
                 progress("正在生成预览…", 94)
                 render_page(directory, page)
@@ -277,7 +286,9 @@ class Studio:
             with self.lock:
                 project["revision"] += 1
                 self.store.save(project)
-                self.job.update(active=False, status="done", message="处理完成，请检查文字内容和样式。")
+                message = (f"已导出 {len(exported)} 页 · {format.upper()}" if kind == "export"
+                           else "处理完成，请检查文字内容和样式。")
+                self.job.update(active=False, status="done", message=message)
         except InterruptedError as exc:
             with self.lock:
                 self.job.update(active=False, status="cancelled", message=str(exc))
@@ -360,7 +371,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_data(dict(self.app.job))
             elif url.path == "/asset":
                 name = query.get("file", "")
-                if not re.fullmatch(r"(?:[0-9a-f]{12}(?:-result)?\.(?:png|svg)|export\.pptx|project\.json)", name):
+                if not re.fullmatch(r"(?:[0-9a-f]{12}(?:-result)?\.(?:png|svg)|export(?:-page)?\.pptx|export-(?:svg|png)\.zip|project\.json)", name):
                     raise ValueError("无效文件名。")
                 path = self.app.store.directory(query["project"]) / name
                 self.send_data(path.read_bytes(), mimetypes.guess_type(name)[0] or "application/octet-stream",

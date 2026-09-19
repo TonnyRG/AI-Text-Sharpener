@@ -235,7 +235,39 @@ def render_page(directory: Path, page: dict):
     return svg, png
 
 
-def export_vector_pptx(directory: Path, project: dict, progress=None) -> Path:
+def export_pages(directory: Path, project: dict, *, scope="all", format="pptx", page_id=None, progress=None) -> Path:
+    """Export the requested pages using the same renderer as the live preview."""
+    if scope not in {"all", "current"} or format not in {"pptx", "svg", "png"}:
+        raise ValueError("无效的导出范围或格式。")
+    pages = project["pages"] if scope == "all" else [p for p in project["pages"] if p["id"] == page_id]
+    if not pages:
+        raise ValueError("没有可导出的页面。")
+    if format == "pptx":
+        return export_vector_pptx(directory, dict(project, pages=pages), progress,
+                                  filename="export.pptx" if scope == "all" else "export-page.pptx")
+    if scope == "current":
+        if progress:
+            progress("正在导出当前页…", 10)
+        render_page(directory, pages[0])
+        return directory / f"{pages[0]['id']}-result.{format}"
+    target = directory / f"export-{format}.zip"
+    temp = target.with_suffix(".tmp")
+    try:
+        with zipfile.ZipFile(temp, "w", zipfile.ZIP_DEFLATED) as archive:
+            for index, page in enumerate(pages, 1):
+                if progress:
+                    progress(f"导出第 {index}/{len(pages)} 页", (index-1) / len(pages) * 95)
+                svg, png = render_page(directory, page)
+                archive.writestr(f"{index:03d}.{format}", svg.encode() if format == "svg" else png)
+        if progress:
+            progress("正在打包 ZIP…", 98)
+        os.replace(temp, target)
+    finally:
+        temp.unlink(missing_ok=True)
+    return target
+
+
+def export_vector_pptx(directory: Path, project: dict, progress=None, *, filename="export.pptx") -> Path:
     """Office SVG picture extension plus lossless PNG fallback.
 
     Text is outlined, not editable PowerPoint text. Letterboxing preserves
@@ -294,7 +326,7 @@ def export_vector_pptx(directory: Path, project: dict, progress=None) -> Path:
     parts["[Content_Types].xml"] = etree.tostring(types, xml_declaration=True, encoding="UTF-8", standalone=True)
     if progress:
         progress("正在打包 PPTX…", 98)
-    target = directory / "export.pptx"
+    target = directory / filename
     temp = target.with_suffix(".tmp")
     with zipfile.ZipFile(temp, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, content in parts.items():

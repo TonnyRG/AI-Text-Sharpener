@@ -474,3 +474,94 @@ def test_full_rescan_retains_unfinished_results_and_resumes(tmp_path, fonts, mon
         assert all(p['regions'][0]['x']==40 for p in resumed['pages'])
         assert all(not p.get('pending_rescan') for p in resumed['pages'])
     finally:app.executor.shutdown()
+
+
+@pytest.mark.parametrize('scope', ['current', 'all'])
+@pytest.mark.parametrize('format', ['pptx', 'svg', 'png'])
+def test_export_scope_format_and_download(tmp_path, fonts, scope, format):
+    """Both scopes export current edits, in order, through the real asset route."""
+    from copy import deepcopy
+    from urllib.parse import parse_qs, urlparse
+    from pptx import Presentation
+    from ai_text_sharpener.studio_project import compose_page
+    server = create_server(tmp_path, 0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    app = server.app
+    image, region = sample(fonts)
+    project = app.store.create('Export')
+    app.store.add_images(project, [('same/name', Image.fromarray(image)) for _ in range(3)])
+    for index, item in enumerate(project['pages']):
+        item['regions'] = [dict(deepcopy(region), x=40+index*15, text=f'Edited {index}')]
+    app.store.save(project)
+    directory = app.store.directory(project['id'])
+    selected = project['pages'][1]
+    included = project['pages'] if scope == 'all' else [selected]
+    expected = [compose_page(directory, deepcopy(p)).encode() for p in included]
+    try:
+        saved = run_background(app, project, 'export', scope=scope, format=format, page_id=selected['id'])
+        assert app.job['status'] == 'done', app.job
+        url = f'http://127.0.0.1:{server.server_port}' + app.job['download']
+        with urllib.request.urlopen(url) as response:
+            content = response.read()
+            assert 'attachment' in response.headers['Content-Disposition']
+        name = parse_qs(urlparse(url).query)['file'][0]
+        assert len(saved['pages']) == 3
+        for item in saved['pages']:
+            assert item['render_revision'] == (saved['revision'] if scope == 'all' or item['id'] == selected['id'] else -1)
+        if format == 'pptx':
+            deck = Presentation(io.BytesIO(content))
+            assert len(deck.slides) == len(included)
+            assert name == ('export.pptx' if scope == 'all' else 'export-page.pptx')
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                for index, svg in enumerate(expected, 1):
+                    assert archive.read(f'ppt/media/image_vector_{index}.svg') == svg
+        else:
+            if scope == 'all':
+                assert name == f'export-{format}.zip'
+                with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                    assert archive.namelist() == [f'{i:03d}.{format}' for i in range(1, 4)]
+                    results = [archive.read(n) for n in archive.namelist()]
+            else:
+                assert name == f"{selected['id']}-result.{format}"
+                results = [content]
+            for result, item, svg in zip(results, included, expected):
+                if format == 'svg':
+                    assert result == svg
+                else:
+                    import resvg_py
+                    assert np.array_equal(np.asarray(Image.open(io.BytesIO(result))),
+                                          np.asarray(Image.open(io.BytesIO(resvg_py.svg_to_bytes(svg_string=svg.decode())))))
+                    assert Image.open(io.BytesIO(result)).size == (item['width'], item['height'])
+    finally:
+        server.shutdown();server.server_close();thread.join();app.executor.shutdown()
+
+
+@pytest.mark.parametrize('extra', [{'scope':'missing'}, {'format':'pdf'}, {'scope':'current','page_id':'missing'}])
+def test_invalid_export_is_rejected_before_job(tmp_path, fonts, extra):
+    app, project, _ = batch_project(tmp_path, fonts)
+    try:
+        with pytest.raises(ValueError):
+            app.start_job(dict(kind='export', project_id=project['id'], revision=project['revision'], **extra))
+        assert not app.job['active']
+        assert not list(app.store.directory(project['id']).glob('export*'))
+    finally:
+        app.executor.shutdown()
+
+
+def test_cancelled_image_export_keeps_previous_archive(tmp_path, fonts):
+    from ai_text_sharpener.studio_project import export_pages
+    app, project, _ = batch_project(tmp_path, fonts)
+    directory = app.store.directory(project['id'])
+    archive = directory / 'export-svg.zip'
+    archive.write_bytes(b'previous export')
+    def cancel(message, value):
+        if value > 0:
+            raise InterruptedError('cancelled')
+    try:
+        with pytest.raises(InterruptedError):
+            export_pages(directory, project, format='svg', progress=cancel)
+        assert archive.read_bytes() == b'previous export'
+        assert not (directory / 'export-svg.tmp').exists()
+    finally:
+        app.executor.shutdown()
