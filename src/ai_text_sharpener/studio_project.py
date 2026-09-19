@@ -56,16 +56,32 @@ class StudioStore:
         finally:
             Path(name).unlink(missing_ok=True)
 
-    def listing(self):
+    def listing(self, trashed=False):
         items = []
-        for path in (self.root / "projects").glob("*/project.json"):
+        for path in (self.root / ("trash" if trashed else "projects")).glob("*/project.json"):
             try:
                 doc = json.loads(path.read_text())
                 items.append({"id": doc["id"], "name": doc["name"],
-                              "updated": doc["updated"], "pages": len(doc["pages"])})
+                              "updated": doc["updated"], "revision": doc["revision"], "pages": len(doc["pages"])})
             except (ValueError, KeyError, OSError):
                 continue
         return sorted(items, key=lambda p: p["updated"], reverse=True)
+
+    def trash(self, project_id, revision):
+        project = self.load(project_id)
+        if revision != project["revision"]:
+            raise RuntimeError("工作区已发生变化，请刷新管理列表后重试。")
+        target = self.root / "trash" / project_id
+        target.parent.mkdir(exist_ok=True)
+        if target.exists():
+            raise RuntimeError("回收站已有同编号工作区。")
+        self.directory(project_id).rename(target)
+
+    def restore(self, project_id):
+        target = self.directory(project_id)  # Validate ID before using it as a path.
+        if target.exists():
+            raise RuntimeError("工作区已存在，请刷新管理列表。")
+        (self.root / "trash" / project_id).rename(target)
 
     def create(self, name):
         result = {"version": 2, "id": uuid.uuid4().hex, "name": str(name)[:160],
@@ -238,11 +254,15 @@ def render_page(directory: Path, page: dict):
 
 def export_pages(directory: Path, project: dict, *, scope="all", format="pptx", page_id=None, progress=None) -> Path:
     """Export the requested pages using the same renderer as the live preview."""
-    if scope not in {"all", "current"} or format not in {"pptx", "svg", "png"}:
+    if scope not in {"all", "current"} or format not in {"pptx", "svg", "png", "json"}:
         raise ValueError("无效的导出范围或格式。")
     pages = project["pages"] if scope == "all" else [p for p in project["pages"] if p["id"] == page_id]
     if not pages:
         raise ValueError("没有可导出的页面。")
+    if format == "json":
+        if scope != "all":
+            raise ValueError("编辑数据备份必须包含全部页面。")
+        return directory / "project.json"
     if format == "pptx":
         return export_vector_pptx(directory, dict(project, pages=pages), progress,
                                   filename="export.pptx" if scope == "all" else "export-page.pptx")

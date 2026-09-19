@@ -28,6 +28,7 @@ from PIL import Image, ImageFilter
 from .fidelity import crop_evidence, fit_region
 from .formula import combine_formula_regions, detect_formulas, fit_formula, recognize_formula, formula_available
 from .studio_project import StudioStore, compose_page, export_pages, image_inputs, render_page, validate_regions
+from .studio_files import default_export_directory, directory_contents, export_destination, save_export, remember_directory
 from .typography import candidate_fonts, font_catalog, outline_layout, svg_document
 
 WEB = Path(__file__).parent / "web"
@@ -169,6 +170,7 @@ class Studio:
     def start_job(self, payload):
         with self.lock:
             self.ensure_idle()
+            payload = dict(payload, _destination=None)
             kind = payload.get("kind")
             if kind not in {"analyze", "analyze_all", "fit", "render", "export", "formula_recognize", "formula_fit"}:
                 raise ValueError("未知任务。")
@@ -182,10 +184,16 @@ class Studio:
                 raise ValueError("项目没有页面，请先导入 PPTX 或图片。")
             if kind == "export":
                 if (payload.get("scope", "all") not in {"all", "current"}
-                        or payload.get("format", "pptx") not in {"pptx", "svg", "png"}):
+                        or payload.get("format", "pptx") not in {"pptx", "svg", "png", "json"}):
                     raise ValueError("无效的导出范围或格式。")
                 if payload.get("scope") == "current" and page is None:
                     raise ValueError("页面不存在。")
+                fmt, scope = payload.get("format", "pptx"), payload.get("scope", "all")
+                if fmt == "json" and scope != "all":
+                    raise ValueError("编辑数据备份必须包含全部页面。")
+                if "destination" in payload:
+                    extension = "zip" if scope == "all" and fmt in {"svg", "png"} else fmt
+                    payload["_destination"] = export_destination(payload["destination"], extension, self.store.root)
             if not isinstance(payload.get("reset", False), bool):
                 raise ValueError("重新识别参数必须为布尔值。")
             if kind == "analyze" and page["regions"] and not payload.get("reset"):
@@ -275,27 +283,37 @@ class Studio:
                 target = export_pages(directory, project, scope=scope, format=format,
                                       page_id=payload.get("page_id"), progress=progress)
                 exported = project["pages"] if scope == "all" else [page]
-                for item in exported:
+                for item in exported if format != "json" else []:
                     item["render_revision"] = project["revision"] + 1
-                self.job["download"] = f"/asset?project={project['id']}&file={target.name}&download=1"
+                if payload["_destination"]:
+                    saved_path = save_export(target, payload["_destination"], progress)
+                    self.job["saved_path"] = str(saved_path)
+                    try:
+                        remember_directory(self.store.root, saved_path.parent)
+                    except OSError:
+                        pass  # A preference failure must not invalidate a successful export.
+                else:
+                    self.job["download"] = f"/asset?project={project['id']}&file={target.name}&download=1"
             else:
                 progress("正在生成预览…", 94)
                 render_page(directory, page)
                 page["render_revision"] = project["revision"] + 1
-            progress("完成", 100)
+            if not self.job.get("saved_path"):
+                progress("完成", 100)
             with self.lock:
                 project["revision"] += 1
                 self.store.save(project)
                 message = (f"已导出 {len(exported)} 页 · {format.upper()}" if kind == "export"
                            else "处理完成，请检查文字内容和样式。")
-                self.job.update(active=False, status="done", message=message)
+                self.job.update(active=False, status="done", progress=100, message=message)
         except InterruptedError as exc:
             with self.lock:
                 self.job.update(active=False, status="cancelled", message=str(exc))
         except Exception as exc:
             traceback.print_exc()
             with self.lock:
-                self.job.update(active=False, status="error", message=str(exc))
+                message = f"文件操作失败，请检查文件夹是否可用及写入权限：{exc}" if isinstance(exc, OSError) else str(exc)
+                self.job.update(active=False, status="error", message=message)
 
     def _fit_page(self, payload, directory, page, progress):
         image = np.asarray(Image.open(directory / f"{page['id']}.png").convert("RGB"))
@@ -364,7 +382,8 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/boot":
                 self.send_data({"token": self.app.token, "version": "0.4.0", "projects": self.app.store.listing(),
                                 "fonts": [{k: v for k, v in f.items() if k not in {"path", "index"}} for f in font_catalog().values()],
-                                "data_dir": str(self.app.store.root), "formula_detection": formula_available()})
+                                "data_dir": str(self.app.store.root), "formula_detection": formula_available(),
+                                "export_directory": default_export_directory(self.app.store.root)})
             elif url.path == "/api/project":
                 self.send_data(self.app.store.load(query["id"]))
             elif url.path == "/api/job":
@@ -406,7 +425,20 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_data(self.app.store.add_images(project, images))
                 return
             data = json.loads(raw)
-            if path == "/api/demo":
+            if path == "/api/workspaces":
+                with self.app.lock:
+                    self.send_data({"projects": self.app.store.listing(), "trash": self.app.store.listing(trashed=True)})
+            elif path in {"/api/workspace/trash", "/api/workspace/restore"}:
+                with self.app.lock:
+                    self.app.ensure_idle()
+                    if path.endswith("/trash"):
+                        self.app.store.trash(data["id"], data.get("revision"))
+                    else:
+                        self.app.store.restore(data["id"])
+                    self.send_data({"ok": True})
+            elif path == "/api/folders":
+                self.send_data(directory_contents(data.get("path") or default_export_directory(self.app.store.root)))
+            elif path == "/api/demo":
                 with self.app.lock:
                     self.app.ensure_idle()
                     project = self.app.store.create("文字重绘 · 示例")
@@ -450,6 +482,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_data({"error": str(exc)}, status=409)
         except (ValueError, KeyError, FileNotFoundError) as exc:
             self.send_data({"error": str(exc)}, status=400)
+        except OSError as exc:
+            self.send_data({"error": f"无法访问文件夹，请检查路径和权限：{exc}"}, status=400)
         except Exception as exc:
             traceback.print_exc()
             self.send_data({"error": str(exc)}, status=500)

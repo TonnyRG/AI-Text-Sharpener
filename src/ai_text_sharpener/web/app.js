@@ -8,6 +8,8 @@ const pageHistories = new Map();
 let historyProjectId = null, editGroup = null;
 let previewTimer, previewRunning = false, previewVersion = 0, previewUrl = null, previewAutoShow = false;
 let editingBox = false, peeking = false;
+let exportNameProject=null, workspaceView='active', workspaceData={projects:[],trash:[]};
+let folderState=null, folderRequest=0, exportPending=false;
 const liveLayers = new Map();
 const page = () => project?.pages.find(p => p.id === pageId);
 const region = () => page()?.regions.find(r => r.id === selectedId);
@@ -28,9 +30,10 @@ async function api(path, body) {
 function safeRun(fn) { return (...args) => Promise.resolve().then(() => fn(...args)).catch(e => toast(e.message, true)); }
 function setBusy(value) {
   busy = value; document.body.classList.toggle('busy', value);
-  for (const id of ['analyzeBtn','analyzeAllBtn','exportBtn','previewBtn','peekBtn','drawBtn','importBtn','newBtn','projectSelect','demoBtn','fitBtn','fitFontBtn','recognizeFormulaBtn','fitFormulaBtn','confirmExport','jsonExport']) {
+  for (const id of ['analyzeBtn','analyzeAllBtn','exportBtn','previewBtn','peekBtn','drawBtn','importBtn','newBtn','manageWorkspacesBtn','projectSelect','demoBtn','fitBtn','fitFontBtn','recognizeFormulaBtn','fitFormulaBtn','confirmExport','jsonExport']) {
     $(id).disabled = value || (['analyzeBtn','analyzeAllBtn','exportBtn','previewBtn','peekBtn','drawBtn'].includes(id) && !page());
   }
+  for(const button of $('workspaceList').querySelectorAll('button'))button.disabled=value;
   $('undoBtn').disabled = value || !undo.length; $('redoBtn').disabled = value || !redo.length;
 }
 function bindHistory() {
@@ -120,6 +123,7 @@ async function flush() {
 async function refreshProjects() {
   const boot = await api('/api/boot'); token = boot.token;
   fonts = boot.fonts;
+  if(!$('exportDirectory').value)$('exportDirectory').value=boot.export_directory||'';
   $('dataPath').textContent = `项目保存位置：${boot.data_dir}`;
   $('projectSelect').replaceChildren(new Option('选择项目', ''));
   for (const p of boot.projects) $('projectSelect').add(new Option(`${p.name} · ${p.pages} 页`, p.id));
@@ -446,6 +450,7 @@ async function watchJob(id, before=null) {
       if(job.status==='cancelled'){toast(job.message);return;}
       $('saveState').textContent='· 已保存';
       if(job.download)download(job.download);
+      if(job.saved_path){$('savedPath').value=job.saved_path;$('exportDirectory').value=job.saved_path.slice(0,job.saved_path.lastIndexOf('/'))||'/';$('savedDialog').showModal();}
       if(job.kind==='analyze_all')$('batchSummary').textContent=job.message;
       toast(['analyze_all','export'].includes(job.kind)?job.message:job.warnings?.length?job.warnings.slice(0,2).join('；'):'已完成，可切换滑动对比检查效果。');
       return;
@@ -511,20 +516,101 @@ function renderExportOptions() {
   if(!page())return;
   const {scope,format}=exportOptions(), count=scope==='all'?project.pages.length:1;
   const packed=scope==='all'&&format!=='pptx';
+  const ext=packed?'zip':format;
+  if(exportNameProject!==project.id){$('exportFilename').value=Array.from(project.name.replace(/[\/\\\r\n]/g,'_')).slice(0,45).join('')+'-重绘.'+ext;exportNameProject=project.id;}
+  else $('exportFilename').value=$('exportFilename').value.replace(/\.(pptx|svg|png|zip|json)$/i,'')+'.'+ext;
   $('exportCurrentLabel').textContent=`第 ${project.pages.indexOf(page())+1} 页`;
   $('exportAllLabel').textContent=`共 ${project.pages.length} 页`;
   $('exportSummary').textContent=packed?`${count} 页 → ${count} 个 ${format.toUpperCase()} 文件，按页码打包为 ZIP。`:
     `${count} 页 → 1 个 ${format.toUpperCase()} 文件。`;
   $('confirmExport').textContent=`导出 ${packed?'ZIP':format.toUpperCase()}`;
 }
-$('exportBtn').onclick=()=>{if(busy||!page())return;renderExportOptions();$('exportDialog').showModal();};
+$('exportBtn').onclick=()=>{if(busy||!page())return;renderExportOptions();$('exportError').hidden=true;$('exportDialog').showModal();};
 for(const id of ['closeExport','cancelExport'])$(id).onclick=()=>$('exportDialog').close();
 for(const input of document.querySelectorAll('#exportDialog input[type="radio"]'))input.onchange=renderExportOptions;
-$('confirmExport').onclick=safeRun(async()=>{
-  if(busy||!page())return;
-  const options=exportOptions();$('exportDialog').close();await runJob('export',options);
+$('confirmExport').onclick=()=>submitExport();
+function exportDestination(json=false) {
+  const directory=$('exportDirectory').value.trim(),name=$('exportFilename').value.trim();
+  if(!directory||!name)throw new Error('请填写保存文件夹和文件名。');
+  const {scope,format}=exportOptions(),ext=json?'json':scope==='all'&&['svg','png'].includes(format)?'zip':format;
+  const filename=name.replace(/\.(pptx|svg|png|zip|json)$/i,'')+'.'+ext;
+  if(!json)$('exportFilename').value=filename;
+  return {directory,filename};
+}
+async function submitExport(json=false) {
+  if(busy||!project||exportPending)return;exportPending=true;$('exportError').hidden=true;
+  $('confirmExport').disabled=true;$('jsonExport').disabled=true;
+  try{
+    const options=json?{format:'json',scope:'all'}:exportOptions();options.destination=exportDestination(json);
+    await flush();$('exportDialog').close();await runJob('export',options);
+  }catch(e){
+    if(!$('exportDialog').open)$('exportDialog').showModal();
+    $('exportError').textContent=e.message;$('exportError').hidden=false;
+  }finally{exportPending=false;$('confirmExport').disabled=busy;$('jsonExport').disabled=busy;}
+}
+$('jsonExport').onclick=()=>submitExport(true);
+for(const id of ['doneSaved','closeSaved'])$(id).onclick=()=>$('savedDialog').close();
+$('savedPath').onclick=()=>$('savedPath').select();
+
+async function loadFolders(path) {
+  const request=++folderRequest;
+  for(const id of ['folderHome','folderUp','folderGo','chooseFolder'])$(id).disabled=true;
+  $('folderList').replaceChildren();$('folderError').hidden=true;
+  try{
+    const result=await api('/api/folders',{path});if(request!==folderRequest)return false;
+    folderState=result;$('folderPath').value=result.path;
+    for(const name of result.folders){
+      const button=document.createElement('button');button.textContent=name;
+      button.onclick=()=>loadFolders(result.path.replace(/\/$/,'')+'/'+name);$('folderList').append(button);
+    }
+    if(!result.folders.length){const empty=document.createElement('p');empty.className='workspace-empty';empty.textContent='此处没有子文件夹，可直接选择当前文件夹。';$('folderList').append(empty);}
+    $('chooseFolder').disabled=false;return true;
+  }catch(e){if(request===folderRequest){$('folderError').textContent=e.message;$('folderError').hidden=false;}return false;}
+  finally{if(request===folderRequest)for(const id of ['folderHome','folderUp','folderGo'])$(id).disabled=false;}
+}
+$('browseExportDir').onclick=()=>{$('folderDialog').showModal();loadFolders($('exportDirectory').value);};
+for(const id of ['closeFolder','cancelFolder'])$(id).onclick=()=>$('folderDialog').close();
+$('folderGo').onclick=()=>loadFolders($('folderPath').value);
+$('folderPath').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();loadFolders($('folderPath').value);}};
+$('folderHome').onclick=()=>loadFolders(folderState?.home||'~');
+$('folderUp').onclick=()=>loadFolders(folderState?.parent||'~');
+$('chooseFolder').onclick=async()=>{if(await loadFolders($('folderPath').value)){$('exportDirectory').value=folderState.path;$('folderDialog').close();}};
+
+function clearProject() {
+  clearTimeout(saveTimer);resetPreview();dirty=false;project=null;pageId=null;selectedId=null;
+  pageHistories.clear();undo=[];redo=[];historyProjectId=null;localStorage.removeItem('sharpener-project');
+  $('saveState').textContent='· 准备就绪';renderProject();
+}
+function renderWorkspaceList() {
+  $('workspaceList').replaceChildren();
+  for(const tab of $('workspaceTabs').children)tab.classList.toggle('active',tab.dataset.list===workspaceView);
+  const items=workspaceView==='trash'?workspaceData.trash:workspaceData.projects;
+  if(!items.length){const empty=document.createElement('p');empty.className='workspace-empty';empty.textContent=workspaceView==='trash'?'回收站为空':'没有工作区';$('workspaceList').append(empty);}
+  for(const item of items){
+    const row=document.createElement('div');row.className='workspace-item';
+    const info=document.createElement('div'),name=document.createElement('strong'),meta=document.createElement('small');
+    name.textContent=item.name;meta.textContent=`${item.pages} 页${item.id===project?.id?' · 当前打开':''}`;info.append(name,meta);
+    const button=document.createElement('button');button.textContent=workspaceView==='trash'?'恢复':'删除';button.className=workspaceView==='trash'?'':'danger';button.disabled=busy;
+    button.onclick=safeRun(async()=>{
+      if(busy)return;const restoring=workspaceView==='trash';
+      if(!restoring&&!confirm(`将工作区「${item.name}」（${item.pages} 页）移入回收站？之后可以恢复。`))return;
+      await flush();setBusy(true);previewVersion++;$('workspaceError').hidden=true;
+      try{
+        await api(restoring?'/api/workspace/restore':'/api/workspace/trash',{id:item.id,revision:item.id===project?.id?project.revision:item.revision});
+        if(!restoring&&project?.id===item.id)clearProject();
+        const boot=await refreshProjects();
+        if(!project&&boot.projects.length)await loadProject(restoring?item.id:boot.projects[0].id);
+        workspaceData=await api('/api/workspaces',{});renderWorkspaceList();toast(restoring?'工作区已恢复':'工作区已移入回收站');
+      }catch(e){$('workspaceError').textContent=e.message;$('workspaceError').hidden=false;}finally{setBusy(false);if(page()?.regions.length)updatePreview().catch(e=>toast(e.message,true));}
+    });
+    row.append(info,button);$('workspaceList').append(row);
+  }
+}
+$('manageWorkspacesBtn').onclick=safeRun(async()=>{
+  if(busy)return;await flush();$('workspaceError').hidden=true;workspaceData=await api('/api/workspaces',{});renderWorkspaceList();$('workspaceDialog').showModal();
 });
-$('jsonExport').onclick=safeRun(async()=>{await flush();download(asset('project.json',true));$('exportDialog').close();});
+$('closeWorkspaces').onclick=()=>$('workspaceDialog').close();
+for(const tab of $('workspaceTabs').children)tab.onclick=()=>{workspaceView=tab.dataset.list;renderWorkspaceList();};
 $('helpBtn').onclick=()=>$('helpDialog').showModal();$('closeHelp').onclick=()=>$('helpDialog').close();
 // Handle history synchronously, before the browser's native input undo.
 // Search boxes and dialogs retain their ordinary browser editing behavior.
