@@ -565,3 +565,34 @@ def test_cancelled_image_export_keeps_previous_archive(tmp_path, fonts):
         assert not (directory / 'export-svg.tmp').exists()
     finally:
         app.executor.shutdown()
+
+
+def test_drag_scale_changes_vectors_but_keeps_original_erase_area(tmp_path, fonts):
+    from copy import deepcopy
+    from ai_text_sharpener.studio_project import compose_page
+    image, region = sample(fonts)
+    region.update(stroke_width=.5, fit_status='edited')
+    store = StudioStore(tmp_path)
+    project = store.create('Drag')
+    store.add_images(project, [('page', Image.fromarray(image))])
+    page = project['pages'][0];page['regions'] = [region]
+    directory = store.directory(project['id'])
+    before = etree.fromstring(compose_page(directory, page).encode())
+    original = deepcopy(region)
+    # Equivalent to a corner drag, followed by a translation on the canvas.
+    region.update(x=120, y=65, font_size=region['font_size']*1.5,
+                  letter_spacing=region['letter_spacing']*1.5, stroke_width=.75)
+    after = etree.fromstring(compose_page(directory, page).encode())
+    assert region['bbox'] == original['bbox']
+    assert region['ink_width'] == pytest.approx(original['ink_width']*1.5, abs=.02)
+    assert region['ink_height'] == pytest.approx(original['ink_height']*1.5, abs=.02)
+    ns = {'svg':'http://www.w3.org/2000/svg'}
+    assert etree.tostring(before.find('svg:image', ns)) == etree.tostring(after.find('svg:image', ns))
+    layer = after.xpath('//*[@data-region-id="text-1"]')[0]
+    assert layer.attrib['transform'] == 'translate(120 65)'
+    assert layer.findall('.//svg:path', ns)
+    # Stable IDs used for live manipulation must remain escaped SVG attributes.
+    region['id'] = 'x"/><script>bad</script>'
+    escaped = etree.fromstring(compose_page(directory, page).encode())
+    assert escaped.xpath('//*[@data-region-id]')[0].attrib['data-region-id'] == region['id']
+    assert not escaped.xpath('//*[local-name()="script"]')

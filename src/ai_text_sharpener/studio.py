@@ -355,9 +355,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             url = urlparse(self.path)
             query = {k: v[0] for k, v in parse_qs(url.query).items()}
-            if url.path in {"/", "/app.js", "/app.css", "/icon.svg"}:
+            if url.path in {"/", "/app.js", "/canvas-geometry.js", "/app.css", "/icon.svg"}:
                 name = "index.html" if url.path == "/" else url.path[1:]
                 mime = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8",
+                        "canvas-geometry.js": "text/javascript; charset=utf-8",
                         "app.css": "text/css; charset=utf-8", "icon.svg": "image/svg+xml"}[name]
                 self.send_data((WEB / name).read_bytes(), mime)
             elif url.path == "/api/boot":

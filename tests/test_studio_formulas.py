@@ -121,3 +121,18 @@ def test_detector_padding_does_not_absorb_caption_above_formula():
     result=combine_formula_regions([caption,part],[formula])
     assert result[0]['id']=='caption'
     assert result[1]['bbox']==formula['bbox']
+
+
+def test_formula_corner_resize_retains_proportions(math_runtime,tmp_path):
+    image=np.full((250,700,3),255,np.uint8)
+    f=combine_formula_regions([], [{'bbox':[20,20,200,70],'confidence':.9}])[0]
+    f.update(enabled=True,latex='E=mc^2',font_size=36,stroke_width=.4,x=20,y=20)
+    directory,page=project_for(tmp_path,image,[f])
+    compose_page(directory,page)
+    before=deepcopy(f)
+    f.update(font_size=54,stroke_width=.6,x=100,y=90)
+    svg=compose_page(directory,page)
+    assert f['bbox']==before['bbox']
+    assert f['ink_width']==pytest.approx(before['ink_width']*1.5,abs=.02)
+    assert f['ink_height']==pytest.approx(before['ink_height']*1.5,abs=.02)
+    assert etree.fromstring(svg.encode()).xpath('//*[@data-region-id]')[0].attrib['transform']=='translate(100 90)'

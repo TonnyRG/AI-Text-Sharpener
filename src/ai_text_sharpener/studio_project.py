@@ -11,6 +11,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from html import escape
 from pathlib import Path
 
 import numpy as np
@@ -208,7 +209,7 @@ def compose_page(directory: Path, page: dict):
         layout = layouts[region["id"]]
         region["ink_width"] = round(layout["width"], 2)
         region["ink_height"] = round(layout["height"], 2)
-        body.append(f'<g transform="translate({region["x"]} {region["y"]})" fill="{region["color"]}" color="{region["color"]}">{layout["body"]}</g>')
+        body.append(f'<g data-region-id="{escape(region["id"], quote=True)}" transform="translate({region["x"]} {region["y"]})" fill="{region["color"]}" color="{region["color"]}">{layout["body"]}</g>')
     # Restore preserved formulas last, including when another manually moved
     # text overlaps them. Keep the complete source region, not OCR fragments.
     for region in formulas:

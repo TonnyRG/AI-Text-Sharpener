@@ -32,9 +32,9 @@
       <div class="welcome-note">支持 PNG、JPG、WebP，以及每页单张铺满图片的 PPTX</div>
     </div>
     <div id="editor" class="editor" hidden>
-      <div class="viewbar"><div class="segmented" id="viewModes"><button data-mode="original" class="active">原图</button><button data-mode="result">重绘</button><button data-mode="compare">滑动对比</button></div><div class="view-tools"><button id="drawBtn">＋ 手动画框</button><label><input type="checkbox" id="boxesChk" checked> 显示文字框</label><select id="zoom" aria-label="缩放"><option value="fit">适应窗口</option><option value="1">100%</option><option value="2">200%</option></select></div></div>
-      <div id="viewport" class="viewport"><div id="sheet" class="sheet"><img id="sourceImage" alt="原始图片" draggable="false"><img id="resultImage" alt="文字重绘结果" draggable="false" hidden><div id="compareLine" hidden><span>◀ ▶</span></div><svg id="overlay" aria-label="文字区域画布"></svg></div></div>
-      <div class="canvas-foot"><span id="canvasHint">点击文字框，查看匹配结果。可拖动调整文字位置。</span><label id="compareControl" hidden>原图 <input type="range" id="compareRange" min="0" max="100" value="50"> 重绘</label><button id="previewBtn">更新预览</button></div>
+      <div class="viewbar"><div class="segmented" id="viewModes"><button data-mode="original" class="active">原图</button><button data-mode="result">重绘</button><button data-mode="compare">滑动对比</button></div><div class="view-tools"><button id="peekBtn" title="按住查看原图，松开返回；也可用键盘空格或回车" disabled>按住看原图</button><button id="drawBtn">＋ 手动画框</button><label><input type="checkbox" id="boxesChk" checked> 显示文字框</label><select id="zoom" aria-label="缩放"><option value="fit">适应窗口</option><option value="1">100%</option><option value="2">200%</option></select></div></div>
+      <div id="viewport" class="viewport"><div id="sheet" class="sheet"><img id="sourceImage" alt="原始图片" draggable="false"><img id="resultImage" alt="文字重绘结果" draggable="false" hidden><div id="liveResult" aria-label="实时重绘结果" hidden></div><div id="compareLine" hidden><span>◀ ▶</span></div><svg id="overlay" aria-label="文字区域画布"></svg></div></div>
+      <div class="canvas-foot"><span id="canvasHint">选中文字框：拖动框内移动，拖动四角缩放。</span><label id="compareControl" hidden>原图 <input type="range" id="compareRange" min="0" max="100" value="50"> 重绘</label><button id="previewBtn">更新预览</button></div>
     </div>
     <div id="jobBar" class="jobbar" hidden><div><span class="spinner"></span><span id="jobMessage">处理中…</span><button id="cancelBtn">取消</button></div><progress id="progress" max="100" value="0"></progress></div>
   </section>
@@ -67,25 +67,25 @@
             <input id="fontSearch" type="search" placeholder="搜索本机字体…" aria-label="搜索字体">
             <select id="fontField" aria-label="字体及字重"></select>
           </div>
-          <div class="two-col"><label class="field">字号 <span>px</span><input id="sizeField" type="number" min="4" max="1000" step="0.5"></label><label class="field">字距 <span>px</span><input id="spacingField" type="number" min="-300" max="300" step="0.25"></label></div>
-          <div class="two-col style-row"><label class="field">笔画加粗 <span>px</span><input id="strokeField" type="number" min="0" max="12" step="0.05" value="0" title="0 为字体原始字重；需变细时选择较轻字重"></label><label class="field">文字颜色<div class="color-control"><input id="colorField" type="color" aria-label="文字颜色"><span id="colorValue"></span></div></label></div>
+          <div class="two-col"><label class="field">字号 <span>px</span><input id="sizeField" type="number" min="4" max="1000" step="any"></label><label class="field">字距 <span>px</span><input id="spacingField" type="number" min="-300" max="300" step="any"></label></div>
+          <div class="two-col style-row"><label class="field">笔画加粗 <span>px</span><input id="strokeField" type="number" min="0" max="12" step="any" value="0" title="0 为字体原始字重；需变细时选择较轻字重"></label><label class="field">文字颜色<div class="color-control"><input id="colorField" type="color" aria-label="文字颜色"><span id="colorValue"></span></div></label></div>
           <div id="fontMatchActions" class="matching-actions"><button id="fitBtn" class="primary">自动匹配字体</button><button id="fitFontBtn">按当前字体匹配</button></div>
           <details id="alternativesPanel" class="field-details" hidden><summary>其他字体候选</summary><div id="alternatives" class="alternatives"></div></details>
           <details class="field-details"><summary>匹配说明</summary><p id="fitNote" class="fit-note"></p><p class="field-help">笔画加粗为 0 时使用字体原始字重；偏细可增加 0.1–0.5 px，需变细时选择较轻字重。</p></details>
         </div>
       </details>
       <details class="property-section" open>
-        <summary><span>文字位置</span><span class="section-meta">px</span></summary>
-        <div class="section-body"><div class="two-col"><label class="field">X<input id="xField" type="number" step="0.5"></label><label class="field">Y<input id="yField" type="number" step="0.5"></label></div><p class="field-help">也可拖动绿色文字框调整。</p></div>
+        <summary><span>文字位置与大小</span><span class="section-meta">px</span></summary>
+        <div class="section-body"><div class="two-col"><label class="field">X<input id="xField" type="number" step="any"></label><label class="field">Y<input id="yField" type="number" step="any"></label></div><p class="field-help">拖动绿色框内移动，拖动四角等比缩放。字号会随缩放一起改变。</p></div>
       </details>
       <details id="sourceSection" class="property-section">
-        <summary><span>原字范围与背景</span><span class="section-meta">OCR 框</span></summary>
+        <summary><span>原字擦除范围</span><span class="section-meta">高级</span></summary>
         <div class="section-body">
-          <button id="editBoxBtn" class="full-width" type="button" aria-pressed="false">在画布上调整范围</button>
+          <button id="editBoxBtn" class="full-width" type="button" aria-pressed="false">调整原字擦除范围</button>
           <div class="two-col"><label class="field">框 X<input id="boxXField" type="number" min="0" step="any"></label><label class="field">框 Y<input id="boxYField" type="number" min="0" step="any"></label></div>
           <div class="two-col"><label class="field">宽度<input id="boxWField" type="number" min="3" step="any"></label><label class="field">高度<input id="boxHField" type="number" min="3" step="any"></label></div>
           <label class="field">背景处理<select id="eraseField"><option value="gradient">纯色 / 渐变补全</option><option value="inpaint">纹理局部修复</option><option value="none">保留背景，仅叠字</option></select></label>
-          <details class="field-details"><summary>如何调整原字范围</summary><p class="field-help">拖动橙色框的边角调整大小，拖动框内移动。此范围用于识别与擦除，不会移动或拉伸重绘文字；调整后可重新匹配。</p></details>
+          <details class="field-details"><summary>如何调整原字范围</summary><p class="field-help">拖动橙色框的边角调整大小，拖动框内移动。这里只调整原图中要擦除的范围。移动、缩放重绘文字，请直接拖绿色框；擦除范围会留在原处。</p></details>
         </div>
       </details>
       <div class="region-footer"><button id="deleteRegion" class="danger quiet">删除区域</button><span>恢复此处原图</span></div>
@@ -110,6 +110,7 @@
   <div class="dialog-actions"><button id="cancelExport">取消</button><button id="confirmExport" class="primary">导出</button></div>
   <div class="backup-row"><span>编辑数据备份 · 全部页面</span><button id="jsonExport" class="quiet">保存 JSON</button></div>
 </dialog>
-<dialog id="helpDialog"><div class="dialog-head"><h2>使用说明</h2><button id="closeHelp" class="icon-btn">×</button></div><ol><li>导入图片，在「识别」栏选择「当前页」或「全部页面」。识别与拟合在本机运行。</li><li>核对识别文字；编辑后会自动更新预览。若想重新贴合原图，再点「自动匹配字体」。</li><li>调整字体、字重、字号、字距与位置；绿色框移动重绘文字，橙色 OCR 框控制原字范围，可拖动边角调整。</li><li>使用「滑动对比」检查。复杂图片背景可尝试「纹理局部修复」。</li><li>点击「导出」，选择页面范围和 PPTX、SVG 或 PNG 格式。全部页面的 SVG / PNG 会按页码打包为 ZIP。所有修改自动保存在本机。</li><li>Ctrl+Z 撤销，Ctrl+Shift+Z 或 Ctrl+Y 重做；也可点击顶部 ↶ / ↷。输入框编辑、移动、调整 OCR 框、删除及匹配结果均可撤销。每页保留最近 80 步，切换页面、自动保存和导出不会清空；刷新窗口后清空。</li></ol><p>此版重点支持水平、单行文字。公式由独立模型检测，先完整保留原图；可识别为 LaTeX 后按二维结构重绘。复杂艺术字、倾斜文字与同一行多种样式需要手动画框拆分、校正；低置信识别默认保留原图。拟合分数用于比较候选，不是正确率。</p><p id="dataPath" class="muted"></p></dialog>
+<dialog id="helpDialog"><div class="dialog-head"><h2>使用说明</h2><button id="closeHelp" class="icon-btn">×</button></div><ol><li>导入图片，在「识别」栏选择「当前页」或「全部页面」。识别与拟合在本机运行。</li><li>核对识别文字；编辑后会自动更新预览。若想重新贴合原图，再点「自动匹配字体」。</li><li>调整字体、字重、字号、字距与位置；选中绿色文字框，拖动框内移动、拖动四角等比缩放，文字随拖动实时变化；橙色框仅在高级擦除范围编辑时显示。</li><li>按住「按住看原图」临时查看原图，松开返回；也可使用「滑动对比」检查。复杂图片背景可尝试「纹理局部修复」。</li><li>点击「导出」，选择页面范围和 PPTX、SVG 或 PNG 格式。全部页面的 SVG / PNG 会按页码打包为 ZIP。所有修改自动保存在本机。</li><li>Ctrl+Z 撤销，Ctrl+Shift+Z 或 Ctrl+Y 重做；也可点击顶部 ↶ / ↷。输入框编辑、移动、调整 OCR 框、删除及匹配结果均可撤销。每页保留最近 80 步，切换页面、自动保存和导出不会清空；刷新窗口后清空。</li></ol><p>此版重点支持水平、单行文字。公式由独立模型检测，先完整保留原图；可识别为 LaTeX 后按二维结构重绘。复杂艺术字、倾斜文字与同一行多种样式需要手动画框拆分、校正；低置信识别默认保留原图。拟合分数用于比较候选，不是正确率。</p><p id="dataPath" class="muted"></p></dialog>
+<script src="/canvas-geometry.js"></script>
 <script src="/app.js"></script>
 </body></html>

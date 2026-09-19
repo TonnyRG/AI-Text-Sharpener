@@ -29,3 +29,9 @@ button:focus-visible,summary:focus-visible{outline:2px solid #438d70;outline-off
 @media(max-width:1150px){main{grid-template-columns:170px minmax(300px,1fr) 296px}.toolbar{padding:12px 14px}.batchbar{padding:9px 14px}.batchbar .muted{flex-basis:100%;margin:0}.inspector{padding:0}.inspector-title{padding:15px 14px}.toolbar strong{max-width:180px}}
 @media(max-width:860px){main{grid-template-columns:150px minmax(280px,1fr);height:auto;min-height:calc(100vh - 58px)}.workspace{height:calc(100vh - 58px)}.library{max-height:calc(100vh - 58px)}.inspector{grid-column:1/-1;padding:0}.inspector-title{position:static}#properties{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 16px 16px}.property-section{margin:0;align-self:start}.region-summary,.region-footer{grid-column:1/-1}.toolbar{flex-wrap:wrap}}
 @media(max-width:560px){main{grid-template-columns:110px minmax(210px,1fr)}.library{padding:15px 8px 0}.view-tools{flex-wrap:wrap}.viewbar{padding:10px}.toolbar strong{max-width:190px}.canvas-foot{padding:10px}.viewport{padding:14px}#properties{display:block}.property-section{margin-bottom:10px}.scope-options{gap:6px}}
+
+/* Direct manipulation of redrawn text; the source erase box is an advanced tool. */
+.sheet>#liveResult{position:absolute;inset:0;pointer-events:none;overflow:hidden}.sheet>#liveResult>svg{display:block;width:100%;height:100%}
+.sheet>#overlay rect.text-handle{pointer-events:all;fill:white;stroke:#176957;stroke-width:1.5;rx:1}
+.sheet>#overlay rect.read-only{cursor:pointer}
+#peekBtn{touch-action:none;user-select:none}#peekBtn.active{background:#eaf4ef;border-color:#74a58f;color:#176957}

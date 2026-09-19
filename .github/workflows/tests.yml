@@ -25,7 +25,9 @@ jobs:
           # PaddleOCR and downloaded formula models remain optional.
           pip install -e '.[dev]'
       - name: Check browser JavaScript
-        run: node --check src/ai_text_sharpener/web/app.js
+        run: |
+          node --check src/ai_text_sharpener/web/app.js
+          node --test tests/canvas-geometry.test.cjs
       - name: Run unit tests
         env:
           PYTHONIOENCODING: utf-8
