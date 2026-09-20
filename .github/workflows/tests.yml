@@ -27,7 +27,7 @@ jobs:
       - name: Check browser JavaScript
         run: |
           node --check src/ai_text_sharpener/web/app.js
-          node --test tests/canvas-geometry.test.cjs
+          node --test tests/*.test.cjs
       - name: Run unit tests
         env:
           PYTHONIOENCODING: utf-8

@@ -21,7 +21,8 @@ from PIL import Image, ImageOps
 
 from .fidelity import erase_regions, automatic_fit_failure
 from .formula import formula_layout, overlaps
-from .typography import font_catalog, outline_layout, svg_document
+from .colors import region_layout, validate_colors
+from .typography import font_catalog, svg_document
 
 MAX_PIXELS = 40_000_000
 
@@ -187,6 +188,7 @@ def validate_regions(regions, width, height):
             raise ValueError("所选字体在本机不可用，请重新选择。")
         if not re.fullmatch(r"#[0-9a-fA-F]{6}", region.get("color", "")):
             raise ValueError("无效文字颜色。")
+        validate_colors(region)
         if region.get("erase_mode", "gradient") not in {"gradient", "inpaint", "none"}:
             raise ValueError("无效背景修复方式。")
 
@@ -209,7 +211,7 @@ def compose_page(directory: Path, page: dict):
             if not region["text"].strip():
                 enabled.append(region)
                 continue
-            layout = outline_layout(region["font_id"], region["text"], region["font_size"], region.get("letter_spacing", 0), region.get("stroke_width", 0))
+            layout = region_layout(region)
             if automatic_fit_failure(region, layout):
                 continue
         layouts[region["id"]] = layout
@@ -226,10 +228,10 @@ def compose_page(directory: Path, page: dict):
         region["ink_width"] = round(layout["width"], 2)
         region["ink_height"] = round(layout["height"], 2)
         body.append(f'<g data-region-id="{escape(region["id"], quote=True)}" transform="translate({region["x"]} {region["y"]})" fill="{region["color"]}" color="{region["color"]}">{layout["body"]}</g>')
-    # Restore preserved formulas last, including when another manually moved
-    # text overlaps them. Keep the complete source region, not OCR fragments.
-    for region in formulas:
-        if region.get("enabled"):
+    # Explicit preservation restores the complete source crop last, even when
+    # a neighboring erase mask or manually moved text overlaps it.
+    for region in page["regions"]:
+        if region.get("enabled") or not (region.get("kind") == "formula" or region.get("preserve_original")):
             continue
         x, y, w, h = region["bbox"]
         x0,y0=max(0,int(x)),max(0,int(y));x1,y1=min(source.shape[1],math.ceil(x+w)),min(source.shape[0],math.ceil(y+h))

@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import io
 import math
+import re
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -128,7 +129,9 @@ def _glyph(font_id: str, gid: int):
 
 
 @lru_cache(maxsize=1024)
-def outline_layout(font_id: str, text: str, size: float, spacing: float = 0, stroke_width: float = 0):
+def outline_layout(font_id: str, text: str, size: float, spacing: float = 0, stroke_width: float = 0, colors: tuple = ()):
+    if colors and (len(colors) != len(text) or any(c is not None and (not isinstance(c, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", c)) for c in colors)):
+        raise ValueError("无效的逐字颜色。")
     if font_id not in font_catalog():
         raise ValueError("字体不存在，请重新选择本机字体。")
     if not text or len(text) > 512 or "\n" in text:
@@ -146,7 +149,7 @@ def outline_layout(font_id: str, text: str, size: float, spacing: float = 0, str
     buffer.guess_segment_properties()
     hb.shape(font, buffer, {"liga": False, "kern": True})
     cursor_x = cursor_y = 0.0
-    shapes, boxes = [], []
+    shapes, boxes, clusters = [], [], []
     infos, positions = buffer.glyph_infos, buffer.glyph_positions
     for idx, (info, pos) in enumerate(zip(infos, positions)):
         data, bounds = _glyph(font_id, info.codepoint)
@@ -156,9 +159,12 @@ def outline_layout(font_id: str, text: str, size: float, spacing: float = 0, str
             x0, y0, x1, y1 = bounds
             boxes.append((gx + x0 * scale, gy - y1 * scale,
                           gx + x1 * scale, gy - y0 * scale))
+            clusters.append(info.cluster)
+            color = colors[info.cluster] if colors else None
+            paint = f' fill="{color}" color="{color}"' if color else ""
             stroke = (f' stroke="currentColor" stroke-width="{stroke_width / scale:.6f}" stroke-linejoin="round"'
                       if stroke_width else '')
-            shapes.append(f'<path transform="translate({gx:.5f} {gy:.5f}) scale({scale:.7f} {-scale:.7f})" d="{data}"{stroke}/>')
+            shapes.append(f'<path transform="translate({gx:.5f} {gy:.5f}) scale({scale:.7f} {-scale:.7f})" d="{data}"{stroke}{paint}/>')
         cursor_x += pos.x_advance * scale
         cursor_y -= pos.y_advance * scale
         if idx + 1 < len(infos) and infos[idx + 1].cluster != info.cluster:
@@ -170,7 +176,9 @@ def outline_layout(font_id: str, text: str, size: float, spacing: float = 0, str
     inset = stroke_width / 2
     body = f'<g transform="translate({-left+inset:.5f} {-top+inset:.5f})">{"".join(shapes)}</g>'
     return {"body": body, "width": right - left + stroke_width, "height": bottom - top + stroke_width,
-            "baseline": -top + inset, "advance": cursor_x}
+            "baseline": -top + inset, "advance": cursor_x,
+            "glyphs": [{"start": cluster, "box": [b[0]-left+inset, b[1]-top+inset, b[2]-b[0], b[3]-b[1]]}
+                       for cluster, b in zip(clusters, boxes)]}
 
 
 def svg_document(width: int, height: int, body: str) -> str:

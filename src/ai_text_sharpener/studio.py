@@ -25,6 +25,7 @@ import numpy as np
 import resvg_py
 from PIL import Image, ImageFilter
 
+from .colors import recover_colors
 from .fidelity import crop_evidence, fit_region
 from .formula import combine_formula_regions, detect_formulas, fit_formula, recognize_formula, formula_available
 from .studio_project import StudioStore, compose_page, export_pages, image_inputs, render_page, validate_regions
@@ -172,7 +173,7 @@ class Studio:
             self.ensure_idle()
             payload = dict(payload, _destination=None)
             kind = payload.get("kind")
-            if kind not in {"analyze", "analyze_all", "fit", "render", "export", "formula_recognize", "formula_fit"}:
+            if kind not in {"analyze", "analyze_all", "fit", "render", "export", "formula_recognize", "formula_fit", "colors"}:
                 raise ValueError("未知任务。")
             project = self.store.load(payload["project_id"])
             if payload.get("revision") != project["revision"]:
@@ -182,6 +183,11 @@ class Studio:
                 raise ValueError("页面不存在。")
             if not project["pages"]:
                 raise ValueError("项目没有页面，请先导入 PPTX 或图片。")
+            if kind == "colors":
+                if payload.get("scope", "current") not in {"current", "all"}:
+                    raise ValueError("无效颜色提取范围。")
+                if payload.get("region_id") and not any(r["id"] == payload["region_id"] for r in page["regions"]):
+                    raise ValueError("文字区域不存在。")
             if kind == "export":
                 if (payload.get("scope", "all") not in {"all", "current"}
                         or payload.get("format", "pptx") not in {"pptx", "svg", "png", "json"}):
@@ -266,6 +272,31 @@ class Studio:
                     self.job.update(active=False, status="done", completed=completed, skipped=skipped, failed=failed,
                                     message=f"共 {total} 页：完成 {completed} 页，保留已有结果 {skipped} 页，失败 {failed} 页。")
                 return
+            if kind == "colors":
+                targets = project["pages"] if payload.get("scope") == "all" else [page]
+                changed = 0
+                for index, item in enumerate(targets):
+                    image = np.asarray(Image.open(directory / f"{item['id']}.png").convert("RGB"))
+                    for region in item["regions"]:
+                        progress(f"第 {index+1}/{len(targets)} 页 · 提取文字颜色…", index / len(targets) * 90)
+                        if (not region.get("enabled") or region.get("locked") or region.get("kind") == "formula"
+                                or (region.get("color_source") == "manual" and not payload.get("region_id"))
+                                or (payload.get("region_id") and region["id"] != payload["region_id"])):
+                            continue
+                        try:
+                            patch = recover_colors(image, region)
+                            changed += patch.get("color_mode") == "multi"
+                            region.update(patch)
+                        except ValueError as exc:
+                            region["color_note"] = str(exc)
+                    item["render_revision"] = -1
+                progress("保存颜色结果…", 95)
+                with self.lock:
+                    project["revision"] += 1
+                    self.store.save(project)
+                    self.job.update(active=False, status="done", progress=100,
+                                    message=f"已检查 {len(targets)} 页，恢复 {changed} 处多色文字；锁定区域与手动配色已保留。")
+                return
             if kind in {"analyze", "fit"}:
                 self._fit_page(payload, directory, page, progress)
             if kind in {"formula_recognize", "formula_fit"}:
@@ -336,6 +367,11 @@ class Studio:
             try:
                 region.update(fit_region(image, region, payload.get("font_ids"),
                     lambda msg: progress(f"{idx+1}/{len(selected)} · {msg}", percent)))
+                if region.get("enabled") and region.get("color_source") != "manual":
+                    try:
+                        region.update(recover_colors(image, region))
+                    except ValueError:
+                        pass  # Color recovery must not invalidate a usable monochrome fit.
             except ValueError as exc:
                 region.update(enabled=False, fit_status="preserved", fit_note=str(exc))
                 self.job["warnings"].append(f"{page['name']} · {region['text'][:20]}：{exc}")
@@ -373,10 +409,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             url = urlparse(self.path)
             query = {k: v[0] for k, v in parse_qs(url.query).items()}
-            if url.path in {"/", "/app.js", "/canvas-geometry.js", "/app.css", "/icon.svg"}:
+            if url.path in {"/", "/app.js", "/canvas-geometry.js", "/review.js", "/color-runs.js", "/app.css", "/icon.svg"}:
                 name = "index.html" if url.path == "/" else url.path[1:]
                 mime = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8",
-                        "canvas-geometry.js": "text/javascript; charset=utf-8",
+                        "canvas-geometry.js": "text/javascript; charset=utf-8", "review.js": "text/javascript; charset=utf-8", "color-runs.js": "text/javascript; charset=utf-8",
                         "app.css": "text/css; charset=utf-8", "icon.svg": "image/svg+xml"}[name]
                 self.send_data((WEB / name).read_bytes(), mime)
             elif url.path == "/api/boot":
