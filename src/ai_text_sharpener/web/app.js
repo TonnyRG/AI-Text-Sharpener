@@ -16,6 +16,38 @@ const region = () => page()?.regions.find(r => r.id === selectedId);
 const clone = value => JSON.parse(JSON.stringify(value));
 const asset = (file, download = false) => `/asset?project=${project.id}&file=${file}${download ? '&download=1' : ''}&v=${project.revision}`;
 
+// Navigation only: switching panels never edits a page or creates undo entries.
+function showPanel(group, panelId) {
+  const list=document.querySelector(`[data-tabs="${group}"]`);
+  for(const button of list.querySelectorAll('[role="tab"]')){
+    const selected=button.dataset.panel===panelId;
+    button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;
+    $(button.dataset.panel).hidden=!selected;
+  }
+  if(group==='inspector'){
+    if(panelId==='sourceEditPanel')$('sourceSection').open=true;
+    else if(editingBox){editingBox=false;updateBoxButton();drawOverlay();updateCanvasHint();}
+  }
+}
+for(const list of document.querySelectorAll('[data-tabs]')){
+  const tabs=Array.from(list.querySelectorAll('[role="tab"]'));
+  for(const [index,button] of tabs.entries()){
+    button.onclick=()=>showPanel(list.dataset.tabs,button.dataset.panel);
+    button.onkeydown=evt=>{
+      const next={ArrowLeft:(index+tabs.length-1)%tabs.length,ArrowRight:(index+1)%tabs.length,Home:0,End:tabs.length-1}[evt.key];
+      if(next===undefined)return;evt.preventDefault();evt.stopPropagation();
+      showPanel(list.dataset.tabs,tabs[next].dataset.panel);tabs[next].focus();
+    };
+  }
+}
+
+function updateCanvasTools(){
+  $('selectBtn').classList.toggle('active',!drawing&&!editingBox);
+  $('selectBtn').setAttribute('aria-pressed',String(!drawing&&!editingBox));
+  $('drawBtn').classList.toggle('active',drawing);
+  $('drawBtn').setAttribute('aria-pressed',String(drawing));
+}
+
 function toast(message, error = false) {
   clearTimeout(toastTimer); $('toast').textContent = message; $('toast').classList.toggle('error', error);
   $('toast').hidden = false; toastTimer = setTimeout(() => $('toast').hidden = true, error ? 9000 : 5000);
@@ -36,6 +68,7 @@ function setBusy(value) {
   for(const button of $('workspaceList').querySelectorAll('button'))button.disabled=value;
   renderReviewActions();for(const id of ['recoverColorBtn','singleColorBtn','applySelectionColor'])$(id).disabled=value||!!region()?.locked; if($('reviewDialog').open)renderReviewList();
   $('undoBtn').disabled = value || !undo.length; $('redoBtn').disabled = value || !redo.length;
+  $('selectBtn').disabled=value||!page();
 }
 function bindHistory() {
   if(historyProjectId!==project?.id){pageHistories.clear();historyProjectId=project?.id;}
@@ -165,7 +198,7 @@ function renderProject() {
     else { $('resultImage').removeAttribute('src'); mode = 'original'; }
     $('overlay').setAttribute('viewBox', `0 0 ${p.width} ${p.height}`);
     $('sheet').style.aspectRatio = `${p.width}/${p.height}`;
-    $('canvasHint').textContent = p.regions.length ? '选中绿色框：拖动框内移动，拖动四角缩放；按住看原图可对照。' : '在「识别」栏选择「当前页」或「全部页面」，或手动画框添加文字。';
+    $('canvasHint').textContent = p.regions.length ? '选中绿色框：拖动框内移动，拖动四角缩放；按住看原图可对照。' : '点击「识别本页」或「批量识别」，也可框选添加文字。';
   }
   renderRegions(); renderInspector(); setMode(mode); setBusy(busy);
   requestAnimationFrame(()=>{resize();if(page()?.regions.length)updatePreview().catch(e=>toast(e.message,true));});
@@ -245,7 +278,7 @@ changeField('colorField','color');changeField('enabledField','enabled');changeFi
 $('fontSearch').oninput=fontOptions;
 $('kindField').onchange=()=>{
   const r=region();if(!r||busy)return;history();r.kind=$('kindField').value;r.score=null;r.alternatives=[];
-  if(r.kind==='formula'){r.latex=r.latex||'';r.enabled=false;r.fit_note='在高级选项中调整原字范围以包含完整公式，再点击「重新识别公式」。';}
+  if(r.kind==='formula'){r.latex=r.latex||'';r.enabled=false;r.fit_note='在「原图修复」中调整原字范围以包含完整公式，再点击「重新识别公式」。';}
   else {r.font_id=r.font_id||fonts[0]?.id;r.text=r.text||r.original_text||'';}
   r.fit_status='edited';markDirty();renderInspector();renderRegions();
 };
@@ -265,6 +298,7 @@ boxFields.forEach((id,index)=>$(id).addEventListener('input',()=>{
   history(id);updateBox(box);markDirty();drawOverlay();
 }));
 function updateBoxButton() {
+  updateCanvasTools();
   $('editBoxBtn').classList.toggle('primary',editingBox);
   $('editBoxBtn').setAttribute('aria-pressed',String(editingBox));
   $('editBoxBtn').textContent=editingBox?'完成擦除范围调整':'调整原字擦除范围';
@@ -373,7 +407,7 @@ function setMode(next) {
   if(next!=='original'&&(!p||(p.render_revision<0&&!previewUrl))){next='original';}
   mode=next;
   for(const b of $('viewModes').children)b.classList.toggle('active',b.dataset.mode===mode);
-  showCanvasLayers();drawOverlay();updateCanvasHint();
+  showCanvasLayers();drawOverlay();updateCanvasHint();updateCanvasTools();
 }
 function compare() {
   const value=Number($('compareRange').value);
@@ -434,7 +468,7 @@ $('overlay').addEventListener('pointerup',evt=>{
     const x=Math.max(0,Math.min(pointer.sx,pointer.ex)),y=Math.max(0,Math.min(pointer.sy,pointer.ey));
     const w=Math.min(page().width-x,Math.abs(pointer.ex-pointer.sx)),h=Math.min(page().height-y,Math.abs(pointer.ey-pointer.sy));
     if(w>=10&&h>=8){history();const r={id:crypto.randomUUID().replaceAll('-','').slice(0,12),text:'请输入文字',original_text:'',bbox:[x,y,w,h],x,y,font_id:fonts.find(f=>f.family==='Microsoft YaHei'&&f.style==='Regular')?.id||fonts[0].id,font_size:Math.max(4,Math.min(1000,h)),letter_spacing:0,color:'#182029',enabled:true,locked:false,erase_mode:'gradient',score:null};page().regions.push(r);selectedId=r.id;markDirty();renderRegions();renderInspector();$('textField').focus();$('textField').select();}
-    drawing=false;document.body.classList.remove('drawing-mode');$('drawBtn').classList.remove('primary');
+    drawing=false;document.body.classList.remove('drawing-mode');$('drawBtn').classList.remove('primary');updateCanvasTools();showPanel('inspector','textEditPanel');
   }else if(pointer.moved)markDirty(pointer.type==='move'||pointer.type==='text-resize');
   pointer=null;drawOverlay();try{$('overlay').releasePointerCapture(evt.pointerId);}catch{}
   if(!dirty&&page()?.regions.length)updatePreview().catch(e=>toast(e.message,true));
@@ -495,13 +529,13 @@ async function upload(files){
       const data=await response.json();if(!response.ok)throw new Error(data.error);
       const oldCount=pid&&project?project.pages.length:0;project=data;pid=data.id;firstNew??=data.pages[oldCount]?.id;
     }
-    await refreshProjects();await loadProject(pid,firstNew);toast('导入完成。在「识别」栏选择「当前页」或「全部页面」开始。');
+    await refreshProjects();await loadProject(pid,firstNew);toast('导入完成。点击「识别本页」或「批量识别」开始。');
   }finally{setBusy(false);$('fileInput').value='';}
 }
 $('fileInput').onchange=safeRun(()=>upload([...$('fileInput').files]));
 for(const id of ['importBtn','welcomeImport'])$(id).onclick=()=>{newImport=false;$('fileInput').click();};
 $('newBtn').onclick=()=>{newImport=true;$('fileInput').click();};
-$('demoBtn').onclick=safeRun(async()=>{if(busy)return;await flush();setBusy(true);try{project=await api('/api/demo',{});await refreshProjects();await loadProject(project.id);toast('已加载测试示例，在「识别」栏选择「当前页」或「全部页面」开始。');}finally{setBusy(false);}});
+$('demoBtn').onclick=safeRun(async()=>{if(busy)return;await flush();setBusy(true);try{project=await api('/api/demo',{});await refreshProjects();await loadProject(project.id);toast('已加载测试示例，点击「识别本页」或「批量识别」开始。');}finally{setBusy(false);}});
 $('projectSelect').onchange=safeRun(async()=>{const id=$('projectSelect').value;if(!id||busy)return;await flush();await loadProject(id);});
 $('analyzeBtn').onclick=safeRun(async()=>{const reset=!!page()?.regions.length;if(reset&&!confirm('重新识别将替换本页现有文字区域和手动修改。是否继续？'))return;await runJob('analyze',{reset});});
 $('analyzeAllBtn').onclick=()=>{
@@ -519,6 +553,7 @@ $('fitFontBtn').onclick=safeRun(async()=>{const r=region();if(!r||r.locked||!r.e
 $('previewBtn').onclick=safeRun(()=>{previewAutoShow=true;return updatePreview();});
 $('cancelBtn').onclick=safeRun(async()=>{await api('/api/cancel',{});$('jobMessage').textContent='正在取消，请等待当前步骤结束…';});
 $('drawBtn').onclick=()=>{drawing=!drawing;editingBox=false;updateBoxButton();document.body.classList.toggle('drawing-mode',drawing);$('drawBtn').classList.toggle('primary',drawing);if(drawing){setMode('original');$('canvasHint').textContent='在原图上拖出一个单行文字框，然后输入正确文字。';}};
+$('selectBtn').onclick=()=>{if(busy)return;cancelCanvasPointer();drawing=false;editingBox=false;document.body.classList.remove('drawing-mode');$('drawBtn').classList.remove('primary');showPanel('inspector','textEditPanel');updateBoxButton();drawOverlay();updateCanvasHint();};
 $('boxesChk').onchange=drawOverlay;$('zoom').onchange=resize;$('sourceImage').onload=resize;
 new ResizeObserver(resize).observe($('viewport'));
 for(const b of $('viewModes').children)b.onclick=safeRun(async()=>{previewAutoShow=false;if(b.dataset.mode!=='original'&&!previewUrl)await updatePreview();setMode(b.dataset.mode);});
@@ -691,6 +726,7 @@ async function locateReview(pid,rid){
   if(busy)return;await flush();$('reviewDialog').close();
   if(pageId!==pid){resetPreview();pageId=pid;selectedId=rid;bindHistory();mode='compare';renderProject();}
   else select(rid);
+  showPanel('library','regionsPanel');showPanel('inspector','textEditPanel');
   $('boxesChk').checked=true;previewAutoShow=false;await updatePreview();setMode('compare');
   const box=$('overlay').querySelector(`[data-id="${CSS.escape(rid)}"]`);box?.scrollIntoView({block:'center',inline:'center'});
 }

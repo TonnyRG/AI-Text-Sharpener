@@ -48,3 +48,30 @@ button:focus-visible,summary:focus-visible{outline:2px solid #438d70;outline-off
 
 .sheet>#overlay .snap-guide{pointer-events:none;stroke:#bf3995;stroke-width:1;stroke-dasharray:6 4;vector-effect:non-scaling-stroke}
 .view-tools{flex-wrap:wrap}
+
+/* Separate document navigation, editing tools, view settings, and source repair. */
+.panel-tabs{display:flex;gap:3px;border-bottom:1px solid var(--line);flex-shrink:0}
+.panel-tabs [role=tab]{flex:1;border:0;border-bottom:2px solid transparent;border-radius:0;padding:9px 4px;background:transparent;color:#74817b;font-size:11px;white-space:nowrap}
+.panel-tabs [role=tab][aria-selected=true]{color:var(--green);border-bottom-color:var(--green);font-weight:600;background:#edf4f0}
+.panel-tabs .count{margin-left:4px;color:inherit;font-size:10px;font-weight:400}
+.library-tabs{margin:17px 0 12px}.library-panel{display:flex;flex:1;min-height:0;flex-direction:column}
+.library-panel .pages{flex:1;max-height:none;min-height:0}.library-panel .regions{min-height:0}
+.panel-caption{font-size:10px;color:#7b8981;line-height:1.7;margin:0 0 10px}
+.page-card{position:relative}.page-card.selected{box-shadow:inset 3px 0 #438d70}
+.command-group{display:flex;align-items:center;gap:6px}.command-group+.command-group{border-left:1px solid #dce4df;padding-left:12px;margin-left:5px}
+.batchbar{row-gap:8px}.batchbar button{padding:6px 10px}
+.canvas-tools{display:flex;align-items:center;gap:3px}.canvas-tools button{font-size:11px;padding:6px 9px;border-color:transparent;background:transparent;white-space:nowrap}
+.canvas-tools button.active{background:#e4eee8;border-color:#bad0c3;color:#176957}
+.viewbar{padding:10px 16px;gap:8px}.view-tools{gap:7px}.view-tools #peekBtn{border-color:transparent;background:transparent;color:#536e60}
+.canvas-foot{flex-wrap:wrap;padding:9px 16px;gap:8px 14px;background:#fcfdfd;flex-shrink:0}
+.canvas-display,.canvas-zoom{display:flex;align-items:center;gap:10px}.canvas-display label{font-size:10px;color:#657b6f;gap:0}
+.canvas-zoom{margin-left:auto;gap:6px}.canvas-zoom select{width:auto;min-width:90px;font-size:10px;padding:5px 7px}
+.canvas-zoom button{padding:5px 8px;color:#657b6f;border-color:transparent;background:transparent}
+.canvas-foot #canvasHint{flex-basis:100%;font-size:10px;line-height:1.6}.canvas-foot #compareRange{width:70px}
+.inspector-tabs{margin-bottom:12px}.inspector-tabs [role=tab]{font-size:12px;padding:9px 5px}
+.repair-caption{margin:0 5px 12px}.inspector .section-body{padding:10px 12px 12px}.property-section>summary{padding:10px 12px}
+.region-summary{padding:12px 5px}.inspector .field input,.inspector .field select{padding:6px 8px}
+@media(min-width:861px){.inspector{background:#f7f9f8}.inspector-title{background:#f7f9f8f5}}
+@media(max-width:1150px){.viewbar{padding:9px 12px}.view-tools{flex-shrink:1}.canvas-foot #canvasHint{display:block}.batchbar .muted{flex-basis:auto;margin-left:auto}}
+@media(max-width:860px){#properties{display:block;padding:0 16px 16px}.property-section{margin-bottom:10px}.command-group+.command-group{padding-left:8px;margin-left:0}.canvas-tools button{padding:6px}.viewbar .view-tools{flex-wrap:wrap}}
+@media(max-width:560px){.panel-tabs [role=tab]{font-size:10px;white-space:normal}.panel-tabs .count{display:block;margin:0}.library-tabs{margin-top:12px}.canvas-foot{padding:8px}.canvas-zoom{margin-left:0}.batchbar{padding:9px}.command-group+.command-group{border:0;padding:0}.inspector-tabs .count{display:inline}.canvas-display{gap:6px}}
