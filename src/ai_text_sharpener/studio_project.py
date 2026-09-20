@@ -118,8 +118,9 @@ def image_inputs(data: bytes, filename: str):
 
 
 def extract_image_slides(data: bytes):
-    """Lossless extraction only for provably single full-bleed raster slides.
+    """Extract single full-bleed raster slides without resampling their pixels.
 
+    Allow up to one source pixel of edge mismatch from aspect-fit rounding.
     Refuse composed decks instead of silently losing native text or drawings.
     """
     from pptx import Presentation
@@ -133,9 +134,7 @@ def extract_image_slides(data: bytes):
         if len(slide.shapes) != 1 or slide.shapes[0].shape_type != MSO_SHAPE_TYPE.PICTURE:
             raise ValueError(f"第 {number} 页不是单张铺满图片。请将复杂 PPT 导出为 PNG/JPG 后导入。")
         shape = slide.shapes[0]
-        if (abs(shape.left) > 100 or abs(shape.top) > 100 or
-            abs(shape.width - deck.slide_width) > 100 or
-            abs(shape.height - deck.slide_height) > 100 or shape.rotation or
+        if (shape.rotation or
             any(abs(v) > .00001 for v in (shape.crop_left, shape.crop_right, shape.crop_top, shape.crop_bottom)) or
             shape._element.xpath('.//a:xfrm[@flipH="1" or @flipV="1"]')):
             raise ValueError(f"第 {number} 页包含裁剪、旋转或非铺满图片，请先导出该页为 PNG。")
@@ -146,6 +145,15 @@ def extract_image_slides(data: bytes):
         with Image.open(io.BytesIO(shape.image.blob)) as image:
             if image.width * image.height > MAX_PIXELS:
                 raise ValueError(f"第 {number} 页图片过大。")
+            # EMU-only tolerances rejected aspect-fit images with invisible,
+            # subpixel margins. Check each edge at the source image resolution;
+            # a fixed percentage would admit visible borders on large images.
+            tolerance_x = deck.slide_width / image.width
+            tolerance_y = deck.slide_height / image.height
+            if (abs(shape.left) > tolerance_x or abs(shape.top) > tolerance_y or
+                abs(shape.left + shape.width - deck.slide_width) > tolerance_x or
+                abs(shape.top + shape.height - deck.slide_height) > tolerance_y):
+                raise ValueError(f"第 {number} 页图片未铺满（边缘偏差超过 1 像素），请先导出该页为 PNG。")
             image.load()
             if abs(image.width / image.height - deck.slide_width / deck.slide_height) > .015:
                 raise ValueError(f"第 {number} 页图片被拉伸，请先导出为 PNG。")
