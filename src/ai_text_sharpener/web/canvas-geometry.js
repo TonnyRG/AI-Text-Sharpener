@@ -1,6 +1,14 @@
 'use strict';
 // Pure geometry shared by canvas manipulation and regression tests.
 const CanvasGeometry = {
+  marqueeIds(regions, from, to, original=false){
+    const left=Math.min(from.x,to.x),right=Math.max(from.x,to.x),top=Math.min(from.y,to.y),bottom=Math.max(from.y,to.y);
+    return regions.filter(r=>{
+      const [x,y,w,h]=r.bbox;
+      const corners=original||!r.enabled||!r.ink_width?[[x,y],[x+w,y],[x+w,y+h],[x,y+h]]:CanvasGeometry.corners(r);
+      return corners.every(([x,y])=>x>=left&&x<=right&&y>=top&&y<=bottom);
+    }).map(r=>r.id);
+  },
   roundStyle(value){return Math.sign(value)*Math.floor(Math.abs(value)+.5);},
   corners(r){
     const w=r.ink_width||0,h=r.ink_height||0,a=(r.rotation||0)*Math.PI/180,c=Math.cos(a),s=Math.sin(a);

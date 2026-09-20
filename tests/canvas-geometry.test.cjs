@@ -1,5 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
+const CanvasGeometry=require('../src/ai_text_sharpener/web/canvas-geometry.js');
 const {resizeText,snapMove}=require('../src/ai_text_sharpener/web/canvas-geometry.js');
 const start={x:80,y:50,ink_width:200,ink_height:40,font_size:40,letter_spacing:2,stroke_width:1};
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
@@ -113,4 +114,20 @@ test('parallel slanted text is not reported as overlapping merely because envelo
   const a={x:100,y:100,ink_width:300,ink_height:20,rotation:45};
   assert.equal(intersects(a,{...a,x:70,y:130}),false);
   assert.equal(intersects(a,{...a,x:102,y:102}),true);
+});
+
+test('marquee contains whole frames in either drag direction and original mode uses OCR boxes',()=>{
+  const regions=[{id:'a',x:10,y:10,ink_width:30,ink_height:10,bbox:[200,200,30,10],enabled:true},
+    {id:'b',x:80,y:10,ink_width:30,ink_height:10,bbox:[80,10,30,10],enabled:true},
+    {id:'off',x:400,y:400,ink_width:30,ink_height:10,bbox:[15,15,10,10],enabled:false}];
+  assert.deepEqual(CanvasGeometry.marqueeIds(regions,{x:0,y:0},{x:50,y:40}),['a','off']);
+  assert.deepEqual(CanvasGeometry.marqueeIds(regions,{x:50,y:40},{x:0,y:0}),['a','off']);
+  assert.deepEqual(CanvasGeometry.marqueeIds(regions,{x:0,y:0},{x:50,y:40},true),['off']);
+  assert.deepEqual(CanvasGeometry.marqueeIds(regions,{x:0,y:0},{x:90,y:40}),['a','off']);
+});
+
+test('marquee uses the visible rotated corners',()=>{
+  const r={id:'r',x:40,y:40,ink_width:80,ink_height:10,rotation:90,bbox:[0,0,10,10],enabled:true};
+  assert.deepEqual(CanvasGeometry.marqueeIds([r],{x:70,y:0},{x:90,y:90}),['r']);
+  assert.deepEqual(CanvasGeometry.marqueeIds([r],{x:35,y:35},{x:125,y:55}),[]);
 });

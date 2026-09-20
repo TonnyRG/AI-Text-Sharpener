@@ -26,6 +26,7 @@ import resvg_py
 from PIL import Image, ImageFilter
 
 from .colors import recover_colors
+from .geometry import source_frame
 from .fidelity import crop_evidence, fit_region
 from .formula import combine_formula_regions, detect_formulas, fit_formula, recognize_formula, formula_available
 from .studio_project import StudioStore, compose_page, export_pages, image_inputs, render_page, validate_regions
@@ -97,6 +98,31 @@ def detect_regions(image_path: Path, progress=None):
     if len(regions) > 500:
         raise ValueError("文字区域超过 500 个，请将页面拆分后处理。")
     return combine_formula_regions(regions, formulas)
+
+
+def restore_plain_text(image, region):
+    """Keep OCR evidence; old formula regions with no text get a local OCR retry."""
+    text = region.get('text') or region.get('original_text') or ''
+    if not text.strip():
+        frame, box, _ = source_frame(image, region)
+        x,y,w,h = map(int, box)
+        crop = frame[max(0,y):min(frame.shape[0],y+h),max(0,x):min(frame.shape[1],x+w)]
+        if not crop.size:
+            raise ValueError('原文字范围无效，请调整后重试。')
+        # Tight line crops can be rejected by the detector at the image edge.
+        crop = cv2.copyMakeBorder(crop,20,20,20,20,cv2.BORDER_REPLICATE)
+        result = ocr_engine()(cv2.cvtColor(crop,cv2.COLOR_RGB2BGR), use_det=True,use_cls=True,use_rec=True)
+        text = ' '.join(getattr(result,'txts',None) or []).strip()
+    if not text:
+        raise ValueError('未识别出普通文字，原区域已保留。可调整原字范围后重试。')
+    if len(text)>512:
+        raise ValueError('区域文字过长，请拆成单行后重试。')
+    fonts = candidate_fonts(text, limit=1)
+    if not fonts:
+        raise ValueError('本机没有支持这些文字的字体。')
+    region.update(kind='text', text=text, original_text=region.get('original_text') or text,
+                  font_id=fonts[0], enabled=True, preserve_original=False, score=None,
+                  fit_status='edited', alternatives=[], fit_note='已恢复普通文字。')
 
 
 def refine_recognized_bounds(image, region, words):
@@ -190,7 +216,7 @@ class Studio:
             self.ensure_idle()
             payload = dict(payload, _destination=None)
             kind = payload.get("kind")
-            if kind not in {"analyze", "analyze_all", "fit", "render", "export", "formula_recognize", "formula_fit", "colors"}:
+            if kind not in {"analyze", "analyze_all", "fit", "render", "export", "formula_recognize", "formula_fit", "text_restore", "colors"}:
                 raise ValueError("未知任务。")
             project = self.store.load(payload["project_id"])
             if payload.get("revision") != project["revision"]:
@@ -314,6 +340,14 @@ class Studio:
                     self.job.update(active=False, status="done", progress=100,
                                     message=f"已检查 {len(targets)} 页，恢复 {changed} 处多色文字；锁定区域与手动配色已保留。")
                 return
+            if kind == "text_restore":
+                region = next((r for r in page['regions'] if r['id']==payload.get('region_id')), None)
+                if region is None or region.get('locked'):
+                    raise ValueError('请选择未锁定的文字区域。')
+                progress('恢复普通文字并匹配样式…', 10)
+                image = np.asarray(Image.open(directory / f"{page['id']}.png").convert('RGB'))
+                restore_plain_text(image, region)
+                self._fit_page(dict(payload,kind='fit'),directory,page,progress)
             if kind in {"analyze", "fit"}:
                 self._fit_page(payload, directory, page, progress)
             if kind in {"formula_recognize", "formula_fit"}:

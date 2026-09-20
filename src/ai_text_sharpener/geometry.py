@@ -52,3 +52,21 @@ def source_position(x, y, width, height, transform):
     center = rotation @ np.array([x+width/2,y+height/2]) + origin
     return {'x':round(float(center[0]-width/2),2),
             'y':round(float(center[1]-height/2),2), 'rotation':round(angle,2)}
+
+
+def normalize_style(region):
+    """Round stored styles, invalidating scores measured before the change."""
+    changed = False
+    for key in ('font_size', 'letter_spacing'):
+        value = region.get(key, 0 if key == 'letter_spacing' else None)
+        if isinstance(value, (int, float)) and math.isfinite(value):
+            rounded = round_style(value)
+            if rounded != value:
+                region[key] = rounded
+                changed = True
+    if changed:
+        region.update(score=None, fit_status='edited')
+        region.pop('reviewed_signature', None)
+    for alternative in region.get('alternatives', []):
+        normalize_style(alternative)
+    return changed

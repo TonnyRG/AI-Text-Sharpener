@@ -78,4 +78,7 @@ button:focus-visible,summary:focus-visible{outline:2px solid #438d70;outline-off
 
 .sheet>#overlay .rotation-stem{stroke:#176957;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
 .sheet>#overlay .rotation-handle{fill:white;stroke:#176957;stroke-width:1.5;vector-effect:non-scaling-stroke;cursor:grab;pointer-events:all}
-.round-style{display:flex;align-items:center;gap:6px;justify-content:space-between;margin-top:8px;font-size:10px;color:#7b8882}.round-style button{font-size:10px;padding:4px 6px;white-space:nowrap}
+
+.sheet>#overlay rect.drawing{pointer-events:none}
+#multiSelection{padding:18px;line-height:1.8}
+#multiSelection:not([hidden]){display:block}

@@ -586,7 +586,10 @@ def test_drag_scale_changes_vectors_but_keeps_original_erase_area(tmp_path, font
                   letter_spacing=region['letter_spacing']*1.5, stroke_width=.75)
     after = etree.fromstring(compose_page(directory, page).encode())
     assert region['bbox'] == original['bbox']
-    assert region['ink_width'] == pytest.approx(original['ink_width']*1.5, abs=.02)
+    assert region['font_size'] == round(original['font_size']*1.5)
+    assert region['letter_spacing'] == 2
+    # Rounding 1.5 px spacing to 2 adds 0.5 px for every inter-character gap.
+    assert region['ink_width'] == pytest.approx(original['ink_width']*1.5+.5*(len(region['text'])-1), abs=.02)
     assert region['ink_height'] == pytest.approx(original['ink_height']*1.5, abs=.02)
     ns = {'svg':'http://www.w3.org/2000/svg'}
     assert etree.tostring(before.find('svg:image', ns)) == etree.tostring(after.find('svg:image', ns))
@@ -598,3 +601,31 @@ def test_drag_scale_changes_vectors_but_keeps_original_erase_area(tmp_path, font
     escaped = etree.fromstring(compose_page(directory, page).encode())
     assert escaped.xpath('//*[@data-region-id]')[0].attrib['data-region-id'] == region['id']
     assert not escaped.xpath('//*[local-name()="script"]')
+
+
+def test_old_project_and_preview_round_styles_automatically(tmp_path,fonts):
+    from ai_text_sharpener.studio_project import compose_page
+    image,r=sample(fonts);r.update(font_size=42.5,letter_spacing=-1.5,score=.99,fit_status='fitted')
+    store=StudioStore(tmp_path);project=store.create('round');store.add_images(project,[('page',Image.fromarray(image))])
+    p=project['pages'][0];p['regions']=[r];p['render_revision']=project['revision'];store.save(project)
+    loaded=store.load(project['id']);rounded=loaded['pages'][0]['regions'][0]
+    assert rounded['font_size']==43 and rounded['letter_spacing']==-2
+    assert rounded['score'] is None and loaded['pages'][0]['render_revision']==-1
+    compose_page(store.directory(project['id']),p)
+    assert r['font_size']==43 and r['letter_spacing']==-2
+
+
+def test_plain_text_restore_job_recovers_and_renders_formula_region(tmp_path,fonts,monkeypatch):
+    from ai_text_sharpener.studio import Studio
+    image,r=sample(fonts);r.update(kind='formula',enabled=False,latex='',original_text=r['text'])
+    app=Studio(tmp_path)
+    try:
+        project=app.store.create('restore');app.store.add_images(project,[('page',Image.fromarray(image))])
+        p=project['pages'][0];p['regions']=[r];app.store.save(project)
+        result=run_background(app,project,'text_restore',page_id=p['id'],region_id=r['id'],font_ids=[r['font_id']])
+        restored=result['pages'][0]['regions'][0]
+        assert app.job['status']=='done'
+        assert restored['kind']=='text' and restored['text']==r['text'] and restored['enabled']
+        assert restored['ink_width']>0 and float(restored['font_size']).is_integer()
+        assert float(restored['letter_spacing']).is_integer()
+    finally:app.executor.shutdown()

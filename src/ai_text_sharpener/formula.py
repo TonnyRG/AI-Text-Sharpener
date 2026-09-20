@@ -5,6 +5,7 @@ No network requests occur while opening, previewing or processing a project.
 """
 from __future__ import annotations
 import io
+import re
 import json
 import os
 import subprocess
@@ -79,6 +80,19 @@ def overlaps(box, other):
 
 def combine_formula_regions(regions, detections):
     """Replace OCR fragments with a single preserved region per detected formula."""
+    # A formula detector is only a proposal. Confident mixed-language prose
+    # without mathematical operators should remain ordinary OCR text.
+    def prose_covers(region, detection):
+        text = region.get('text', '')
+        if (region.get('confidence', 0) < .8 or len(re.findall(r'[\u4e00-\u9fff]', text)) < 2
+                or len(re.findall(r'[A-Za-z]', text)) < 2
+                or re.search(r'[=+<>∑∫√≈≤≥±∂∞^_]', text)):
+            return False
+        x,y,w,h = region.get('ocr_bbox', region['bbox'])
+        a,b,c,d = detection['bbox']
+        intersection = max(0,min(x+w,a+c)-max(x,a))*max(0,min(y+h,b+d)-max(y,b))
+        return intersection >= .65*c*d
+    detections = [f for f in detections if not any(prose_covers(r,f) for r in regions)]
     expanded = []
     for f in detections:
         box = f['bbox']
@@ -95,7 +109,10 @@ def combine_formula_regions(regions, detections):
     result = [r for r in regions if not any(overlaps(r.get('ocr_bbox',r['bbox']), f['bbox']) for f in detections)]
     for f in detections:
         x,y,w,h=f['bbox']
-        result.append({'id':uuid.uuid4().hex[:12], 'kind':'formula', 'text':'', 'original_text':'',
+        members = sorted([r for r in regions if overlaps(r.get('ocr_bbox',r['bbox']),f['bbox'])],
+                         key=lambda r:(r['bbox'][1]//30,r['bbox'][0]))
+        fallback = ' '.join(r.get('text','').strip() for r in members).strip()
+        result.append({'id':uuid.uuid4().hex[:12], 'kind':'formula', 'text':fallback if len(fallback)<=512 else '', 'original_text':fallback,
                        'latex':'', 'bbox':f['bbox'], 'x':x, 'y':y, 'font_id':'',
                        'font_size':48, 'letter_spacing':0, 'stroke_width':0, 'color':'#182029',
                        'enabled':False,'locked':False,'confidence':f['confidence'],'score':None,

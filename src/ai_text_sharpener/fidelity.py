@@ -101,20 +101,15 @@ def fit_region(image: np.ndarray, region: dict, font_ids=None, progress=None) ->
             estimated_size = max(4, min(1000, (ih-stroke_width) * 64 / max(1, base["height"])))
             best = None
             # Estimate spacing from the actual glyph geometry, then refine size.
-            for factor in (.92, .97, 1.0, 1.035, 1.08):
-                size = max(4,min(1000,estimated_size * factor))
+            sizes = {max(4,min(1000,round_style(estimated_size*factor)+offset))
+                     for factor in (.92,.97,1.0,1.035,1.08) for offset in (-1,0,1)}
+            for size in sorted(sizes):
                 natural = outline_layout(fid, text, round(size, 3), 0.0, stroke_width)
                 spacing = (iw - natural["width"]) / max(1, len(text) - 1)
                 spacing = float(np.clip(spacing, -size * .12, size * .35)) if len(text) > 1 else 0.0
-                size, spacing = round(size, 2), round(spacing, 2)
+                size, spacing = round_style(size), round_style(spacing)
                 mask, _ = render_mask(fid, text, size * scale, spacing * scale, stroke_width * scale)
                 score, (dx, dy) = _match(target, mask)
-                # Prefer whole numbers when visual agreement is essentially tied.
-                integer_size, integer_spacing = round_style(size), round_style(spacing)
-                integer_mask, _ = render_mask(fid, text, integer_size*scale, integer_spacing*scale, stroke_width*scale)
-                integer_score, integer_pos = _match(target, integer_mask)
-                if integer_score >= score - .01:
-                    size, spacing, score, (dx,dy) = integer_size, integer_spacing, integer_score, integer_pos
                 layout = outline_layout(fid, text, size, spacing, stroke_width)
                 item = {"font_id": fid, "font_label": font_catalog()[fid]["label"],
                         "font_size": round(size, 2), "letter_spacing": round(spacing, 2), "stroke_width": stroke_width,

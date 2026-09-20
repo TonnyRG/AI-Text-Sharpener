@@ -136,3 +136,50 @@ def test_formula_corner_resize_retains_proportions(math_runtime,tmp_path):
     assert f['ink_width']==pytest.approx(before['ink_width']*1.5,abs=.02)
     assert f['ink_height']==pytest.approx(before['ink_height']*1.5,abs=.02)
     assert etree.fromstring(svg.encode()).xpath('//*[@data-region-id]')[0].attrib['transform']=='translate(100 90)'
+
+
+@pytest.mark.parametrize('text',['质谱 LC-MS 分析','使用 Shiny PreADME 预测药物性质','中文 English 混排文本'])
+def test_confident_mixed_prose_is_not_replaced_by_formula(text):
+    r=dict(id='mixed',text=text,confidence=.98,bbox=[10,20,380,40])
+    result=combine_formula_regions([r],[dict(bbox=[15,22,365,36],confidence=.95)])
+    assert result==[r]
+
+
+def test_math_operators_keep_formula_detection_and_ocr_fallback():
+    r=dict(id='math',text='质量 E=mc^2 关系',confidence=.99,bbox=[10,20,300,40])
+    result=combine_formula_regions([r],[dict(bbox=[15,22,290,36],confidence=.95)])
+    assert result[0]['kind']=='formula'
+    assert result[0]['text']==r['text']==result[0]['original_text']
+
+
+def test_switch_to_text_preserves_evidence_without_rerunning_ocr(monkeypatch):
+    import ai_text_sharpener.studio as studio
+    def unexpected():raise AssertionError('OCR evidence must be reused')
+    monkeypatch.setattr(studio,'ocr_engine',unexpected)
+    r=dict(kind='formula',text='中文 English 混排',original_text='',bbox=[10,20,300,40])
+    studio.restore_plain_text(np.full((100,400,3),255,np.uint8),r)
+    assert r['kind']=='text' and r['enabled'] and r['font_id']
+    assert r['text']=='中文 English 混排'
+
+
+def test_old_formula_without_text_gets_local_plain_ocr(monkeypatch):
+    from types import SimpleNamespace
+    import ai_text_sharpener.studio as studio
+    seen=[]
+    def recognize(image,**kwargs):
+        seen.append(image.shape)
+        return SimpleNamespace(txts=['Shiny 中文文本'])
+    monkeypatch.setattr(studio,'ocr_engine',lambda:recognize)
+    r=dict(kind='formula',text='',original_text='',bbox=[10,20,300,40])
+    studio.restore_plain_text(np.full((100,400,3),255,np.uint8),r)
+    assert seen==[(80,340,3)]
+    assert r['kind']=='text' and r['text']=='Shiny 中文文本' and r['enabled']
+
+
+def test_failed_plain_ocr_keeps_previous_formula(monkeypatch):
+    from types import SimpleNamespace
+    import ai_text_sharpener.studio as studio
+    monkeypatch.setattr(studio,'ocr_engine',lambda:lambda *a,**k:SimpleNamespace(txts=None))
+    r=dict(kind='formula',text='',bbox=[10,20,300,40]);before=deepcopy(r)
+    with pytest.raises(ValueError,match='未识别'):studio.restore_plain_text(np.full((100,400,3),255,np.uint8),r)
+    assert r==before

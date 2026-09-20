@@ -19,6 +19,7 @@ import resvg_py
 from lxml import etree
 from PIL import Image, ImageOps
 
+from .geometry import normalize_style
 from .fidelity import erase_regions, automatic_fit_failure
 from .formula import formula_layout, overlaps
 from .colors import region_layout, validate_colors
@@ -42,7 +43,12 @@ class StudioStore:
         return self.root / "projects" / project_id
 
     def load(self, project_id):
-        return json.loads((self.directory(project_id) / "project.json").read_text())
+        project = json.loads((self.directory(project_id) / "project.json").read_text())
+        for page in project['pages']:
+            changed = [normalize_style(r) for r in page['regions']]
+            if any(changed):
+                page['render_revision'] = -1
+        return project
 
     def save(self, project):
         project["updated"] = time.time()
@@ -206,6 +212,7 @@ def validate_regions(regions, width, height):
             raise ValueError("所选字体在本机不可用，请重新选择。")
         if not re.fullmatch(r"#[0-9a-fA-F]{6}", region.get("color", "")):
             raise ValueError("无效文字颜色。")
+        normalize_style(region)
         validate_colors(region)
         if region.get("erase_mode", "gradient") not in {"gradient", "inpaint", "none"}:
             raise ValueError("无效背景修复方式。")
