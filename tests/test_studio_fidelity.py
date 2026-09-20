@@ -113,6 +113,8 @@ def test_detection_uses_recognizer_positions_to_exclude_adjacent_art(monkeypatch
     def recognize(path, **kwargs):
         assert kwargs['return_word_box'] is True
         return SimpleNamespace(boxes=np.array([[[3,3],[598,3],[598,80],[3,80]]]),txts=[text],scores=[.999],word_results=(words,))
+    recognize.text_cls=lambda crops:SimpleNamespace(cls_res=[('0',1.0)]*len(crops))
+    recognize.text_cls.cls_thresh=.9
     monkeypatch.setattr(studio,'ocr_engine',lambda:recognize)
     monkeypatch.setattr(studio,'candidate_fonts',lambda *args,**kwargs:fonts[:1])
     region=studio.detect_regions(image_path)[0]

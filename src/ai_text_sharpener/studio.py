@@ -47,7 +47,8 @@ def ocr_engine():
 def detect_regions(image_path: Path, progress=None):
     if progress:
         progress("正在本机识别中英文文字…")
-    result = ocr_engine()(str(image_path), return_word_box=True, use_det=True, use_cls=True, use_rec=True)
+    engine = ocr_engine()
+    result = engine(str(image_path), return_word_box=True, use_det=True, use_cls=True, use_rec=True)
     regions = []
     image = np.asarray(Image.open(image_path).convert("RGB"))
     if progress:
@@ -55,6 +56,12 @@ def detect_regions(image_path: Path, progress=None):
     formulas = detect_formulas(image)
     if result.boxes is None:
         return combine_formula_regions([], formulas)
+    # RapidOCR exposes corrected text but not its 180-degree classification in
+    # the combined result. Recover that direction from the same line crops.
+    from rapidocr.utils.process_img import get_rotate_crop_image
+    bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    crops = [get_rotate_crop_image(bgr, np.asarray(box,dtype=np.float32)) for box in result.boxes]
+    directions = engine.text_cls(crops).cls_res if crops else []
     word_results = getattr(result, "word_results", None) or ()
     for index, (box, text, score) in enumerate(zip(result.boxes, result.txts, result.scores)):
         if not text.strip():
@@ -62,19 +69,29 @@ def detect_regions(image_path: Path, progress=None):
         points = np.asarray(box)
         x0, y0 = points.min(axis=0)
         x1, y1 = points.max(axis=0)
+        line_width = max(np.linalg.norm(points[1]-points[0]),np.linalg.norm(points[2]-points[3]))
+        line_height = max(np.linalg.norm(points[3]-points[0]),np.linalg.norm(points[2]-points[1]))
+        if line_height >= line_width*1.5:
+            points = points[[1,2,3,0]]  # Same quarter-turn as RapidOCR's crop.
+        if directions and '180' in directions[index][0] and directions[index][1] > engine.text_cls.cls_thresh:
+            points = points[[2,3,0,1]]
         angle = math.degrees(math.atan2(points[1, 1] - points[0, 1], points[1, 0] - points[0, 0]))
+        angle = round((angle+180)%360-180,2)
+        if abs(angle)<.5:
+            angle=0
         ids = candidate_fonts(text, limit=1)
-        enabled = bool(ids) and float(score) >= .80 and abs(angle) <= 5
+        enabled = bool(ids) and float(score) >= .80
         region = {"id": uuid.uuid4().hex[:12], "text": text, "original_text": text,
                   "bbox": [max(0, float(x0)-3), max(0, float(y0)-3), float(x1-x0)+6, float(y1-y0)+6],
                   "x": float(x0), "y": float(y0), "font_id": ids[0] if ids else "",
-                  "font_size": max(4, min(1000, float(y1-y0))), "letter_spacing": 0,
+                  "font_size": max(4, min(1000, round(float(np.linalg.norm(points[3]-points[0]))))), "letter_spacing": 0,
+                  "rotation": angle, "source_rotation": angle, "source_quad": points.tolist(),
                   "color": "#182029", "enabled": enabled, "locked": False,
                   "confidence": round(float(score), 4), "score": None,
                   "erase_mode": "gradient", "fit_status": "new" if enabled else "preserved",
-                  "fit_note": "" if enabled else "识别置信度较低、字体缺失或文字倾斜，暂保留原图。"}
+                  "fit_note": "" if enabled else "识别置信度较低或字体缺失，暂保留原图。"}
         words = word_results[index] if index < len(word_results) else None
-        if enabled and words:
+        if enabled and words and not angle:
             refine_recognized_bounds(image, region, words)
         regions.append(region)
     if len(regions) > 500:

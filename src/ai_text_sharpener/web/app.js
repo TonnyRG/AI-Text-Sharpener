@@ -222,12 +222,13 @@ function fontOptions() {
 }
 function renderGeometryFields(r) {
   const rounded=v=>Math.round(v*1000)/1000;
-  for(const [id,key] of [['sizeField','font_size'],['spacingField','letter_spacing'],['strokeField','stroke_width'],['xField','x'],['yField','y']])
-    $(id).value=rounded(r[key]||0);
+  for(const [id,key] of [['sizeField','font_size'],['spacingField','letter_spacing'],['strokeField','stroke_width'],['xField','x'],['yField','y'],['rotationField','rotation'],['sourceRotationField','source_rotation']])
+    $(id).value=['font_size','letter_spacing'].includes(key)?Math.round((r[key]||0)*100)/100:rounded(r[key]||0);
 }
 function renderInspector() {
   const r=region(); $('noSelection').hidden=!!r; $('properties').hidden=!r;
   if(!r)return;
+  $('roundStyleBtn').disabled=busy||!!r.locked;
   const math=r.kind==='formula';$('kindField').value=math?'formula':'text';$('formulaPanel').hidden=!math;$('plainTextLabel').hidden=math;
   $('latexField').value=r.latex||'';
   for(const id of ['fontControls','fontMatchActions'])$(id).hidden=math;
@@ -260,19 +261,28 @@ function renderFitStatus(r) {
 function changeField(id,key,convert=v=>v) {
   $(id).addEventListener('input',()=>{
     const r=region();if(!r||busy)return; const raw=$(id).type==='checkbox'?$(id).checked:$(id).value;
-    if($(id).type==='number'&&(raw===''||!$(id).checkValidity()))return;
+    const integerStyle=['font_size','letter_spacing'].includes(key);
+    if($(id).type==='number'&&(raw===''||!$(id).checkValidity()&&!(integerStyle&&$(id).validity.stepMismatch&&!$(id).validity.rangeUnderflow&&!$(id).validity.rangeOverflow)))return;
     const value=convert(raw); if(typeof value==='number'&&!Number.isFinite(value))return;
+    if(integerStyle)$(id).value=value;
     if(r[key]===value)return;
-    history(['text','latex','font_size','letter_spacing','stroke_width','x','y'].includes(key)?id:null);r[key]=value;
-    if(['text','latex','font_id','font_size','letter_spacing','stroke_width','x','y'].includes(key)){r.score=null;r.fit_status='edited';r.alternatives=[];$('alternatives').replaceChildren();$('alternativesPanel').hidden=true;}
+    history(['text','latex','font_size','letter_spacing','stroke_width','x','y','rotation','source_rotation'].includes(key)?id:null);r[key]=value;
+    if(['text','latex','font_id','font_size','letter_spacing','stroke_width','x','y','rotation','source_rotation'].includes(key)){r.score=null;r.fit_status='edited';r.alternatives=[];$('alternatives').replaceChildren();$('alternativesPanel').hidden=true;}
     if(key==='enabled'){r.preserve_original=!value;if(value)r.fit_status='edited';delete r.reviewed_signature;}
     if(key==='text'){r.text=r.text.replace(/[\r\n]+/g,' ');r.color_mode='single';r.color_runs=[];r.color_text='';r.color_note='文字内容已改动，请重新设置分色。';renderColorControls();}
     if(key==='color'){$('colorValue').textContent=value.toUpperCase();r.color_mode='single';r.color_source='manual';r.color_note='已统一整行颜色。';renderColorControls();}
     markDirty();renderRegions();renderFitStatus(r);
   });
 }
-changeField('latexField','latex');changeField('textField','text');changeField('fontField','font_id');changeField('sizeField','font_size',Number);
-changeField('spacingField','letter_spacing',Number);changeField('xField','x',Number);changeField('yField','y',Number);
+changeField('latexField','latex');changeField('textField','text');changeField('fontField','font_id');changeField('sizeField','font_size',v=>CanvasGeometry.roundStyle(Number(v)));
+changeField('spacingField','letter_spacing',v=>CanvasGeometry.roundStyle(Number(v)));changeField('xField','x',Number);changeField('yField','y',Number);
+changeField('rotationField','rotation',Number);changeField('sourceRotationField','source_rotation',Number);
+$('roundStyleBtn').onclick=()=>{
+  const r=region();if(!r||busy||r.locked)return;
+  const size=CanvasGeometry.roundStyle(r.font_size),spacing=CanvasGeometry.roundStyle(r.letter_spacing||0);
+  if(size===r.font_size&&spacing===(r.letter_spacing||0))return;
+  history();Object.assign(r,{font_size:size,letter_spacing:spacing,score:null,fit_status:'edited',alternatives:[]});markDirty();renderInspector();renderRegions();
+};
 changeField('strokeField','stroke_width',Number);
 changeField('colorField','color');changeField('enabledField','enabled');changeField('lockedField','locked');changeField('eraseField','erase_mode');
 $('fontSearch').oninput=fontOptions;
@@ -288,7 +298,7 @@ $('fitFormulaBtn').onclick=safeRun(async()=>{if(region()?.locked)throw new Error
 const boxFields=['boxXField','boxYField','boxWField','boxHField'];
 function renderBoxFields(){const r=region();if(r)boxFields.forEach((id,i)=>$(id).value=Math.round(r.bbox[i]*100)/100);}
 function updateBox(bbox){
-  const r=region();r.bbox=bbox;r.score=null;r.fit_status='edited';r.alternatives=[];
+  const r=region();r.bbox=bbox;delete r.source_quad;r.score=null;r.fit_status='edited';r.alternatives=[];
   $('alternatives').replaceChildren();$('alternativesPanel').hidden=true;renderFitStatus(r);renderBoxFields();
 }
 boxFields.forEach((id,index)=>$(id).addEventListener('input',()=>{
@@ -313,7 +323,7 @@ function updateCanvasHint() {
     mode==='original'?'正在查看原图 · 切换「重绘」后可拖动文字框编辑。':
     region()?.locked?'此区域已锁定 · 取消「锁定样式」后可拖动。':
     region()&&!region().enabled?'此区域保留原图 · 开启「重绘此区域」后可编辑。':
-    '拖动框内移动，四角缩放；靠近对齐位置自动吸附，按住 Alt 临时关闭。';
+    '拖动框内移动、四角缩放、圆点旋转（Shift 按 15°）；Alt 临时关闭吸附。';
 }
 function installLiveResult(svg) {
   const root=new DOMParser().parseFromString(svg,'image/svg+xml').documentElement;
@@ -327,7 +337,7 @@ function installLiveResult(svg) {
 }
 function transformLiveRegion(r) {
   const layer=liveLayers.get(r.id);if(!layer)return;
-  layer.node.setAttribute('transform',`translate(${r.x} ${r.y}) scale(${r.ink_width/layer.width} ${r.ink_height/layer.height})`);
+  layer.node.setAttribute('transform',`translate(${r.x} ${r.y}) rotate(${r.rotation||0} ${r.ink_width/2} ${r.ink_height/2}) scale(${r.ink_width/layer.width} ${r.ink_height/layer.height})`);
 }
 function showCanvasLayers() {
   const original=mode==='original'||peeking;
@@ -363,12 +373,14 @@ function drawOverlay() {
   const overlay=$('overlay');overlay.replaceChildren();
   if(!$('boxesChk').checked&&!drawing)return;
   const size=10*(page()?.width||1)/Math.max(1,$('sheet').getBoundingClientRect().width);
+  const turn=r=>`rotate(${r.rotation||0} ${r.x+r.ink_width/2} ${r.y+r.ink_height/2})`;
   function handles(r,x,y,w,h,source=false){
     const points=source?[['nw',0,0],['n',.5,0],['ne',1,0],['e',1,.5],['se',1,1],['s',.5,1],['sw',0,1],['w',0,.5]]:
       [['nw',0,0],['ne',1,0],['se',1,1],['sw',0,1]];
     for(const [handle,fx,fy] of points){
       const dot=rect(x+w*fx-size/2,y+h*fy-size/2,size,size,source?'box-handle':'text-handle');
       dot.dataset.id=r.id;dot.dataset.handle=handle;dot.dataset.target=source?'source':'text';
+      if(!source)dot.setAttribute('transform',turn(r));
       dot.style.cursor=handle+'-resize';overlay.append(dot);
     }
   }
@@ -376,6 +388,7 @@ function drawOverlay() {
     const [bx,by,bw,bh]=r.bbox,original=mode==='original'||!r.enabled;
     const box=rect(original?bx:r.x,original?by:r.y,original?bw:(r.ink_width||bw),original?bh:(r.ink_height||bh),
       `${r.id===selectedId?'selected':''} ${!r.enabled?'off':''} ${mode==='original'||r.locked?'read-only':''}`);
+    if(!original&&r.ink_width&&r.ink_height)box.setAttribute('transform',turn(r));
     box.dataset.id=r.id;overlay.append(box);
   }
   const r=region();
@@ -384,8 +397,14 @@ function drawOverlay() {
     handles(r,x,y,w,h,true);
   }else if(r?.enabled&&!r.locked&&mode!=='original'&&liveLayers.has(r.id)&&r.ink_width>0&&r.ink_height>0){
     // Put the selected frame above overlapping regions, as in a slide editor.
-    const box=rect(r.x,r.y,r.ink_width,r.ink_height,'selected');box.dataset.id=r.id;overlay.append(box);
+    const box=rect(r.x,r.y,r.ink_width,r.ink_height,'selected');box.dataset.id=r.id;box.setAttribute('transform',turn(r));overlay.append(box);
     handles(r,r.x,r.y,r.ink_width,r.ink_height);
+    const cx=r.x+r.ink_width/2,cy=r.y-size*2.8;
+    const stem=document.createElementNS('http://www.w3.org/2000/svg','line');
+    for(const [key,value]of Object.entries({x1:cx,x2:cx,y1:r.y,y2:cy,class:'rotation-stem',transform:turn(r)}))stem.setAttribute(key,value);
+    const knob=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    for(const [key,value]of Object.entries({cx,cy,r:size*.55,class:'rotation-handle',transform:turn(r),'aria-label':'旋转文字'}))knob.setAttribute(key,value);
+    knob.dataset.id=r.id;knob.dataset.handle='rotate';overlay.append(stem,knob);
   }
   if(pointer?.type==='draw')overlay.append(rect(Math.min(pointer.sx,pointer.ex),Math.min(pointer.sy,pointer.ey),Math.abs(pointer.ex-pointer.sx),Math.abs(pointer.ey-pointer.sy),'drawing'));
   for(const guide of pointer?.guides||[]){
@@ -425,7 +444,7 @@ $('overlay').addEventListener('pointerdown',evt=>{
       if(!liveLayers.has(r.id)){
         updatePreview().catch(e=>toast(e.message,true));toast('正在准备文字预览，请稍后拖动。');return;
       }
-      pointer={type:handle?'text-resize':'move',handle,sx:pos.x,sy:pos.y,x:r.x,y:r.y,start:clone(r),moved:false,
+      pointer={type:handle==='rotate'?'text-rotate':handle?'text-resize':'move',handle,sx:pos.x,sy:pos.y,x:r.x,y:r.y,start:clone(r),moved:false,
         targets:page().regions.filter(other=>liveLayers.has(other.id)).map(other=>({...other})),guides:[]};
     }
   }
@@ -445,7 +464,8 @@ function moveCanvasPointer(evt) {
       updateBox([left,top,right-left,bottom-top]);
     }else{
       const r=region();
-      if(pointer.type==='text-resize')Object.assign(r,CanvasGeometry.resizeText(pointer.start,pointer.handle,dx,dy));
+      if(pointer.type==='text-rotate')r.rotation=CanvasGeometry.rotationAt(pointer.start,{x:pointer.sx,y:pointer.sy},pos,evt.shiftKey);
+      else if(pointer.type==='text-resize')Object.assign(r,CanvasGeometry.resizeText(pointer.start,pointer.handle,dx,dy));
       else{
         const p=page(),snapped=CanvasGeometry.snapMove(pointer.start,
           Math.max(-p.width,Math.min(p.width*2,Math.round((pointer.x+dx)*2)/2)),
@@ -467,15 +487,15 @@ $('overlay').addEventListener('pointerup',evt=>{
   if(pointer.type==='draw') {
     const x=Math.max(0,Math.min(pointer.sx,pointer.ex)),y=Math.max(0,Math.min(pointer.sy,pointer.ey));
     const w=Math.min(page().width-x,Math.abs(pointer.ex-pointer.sx)),h=Math.min(page().height-y,Math.abs(pointer.ey-pointer.sy));
-    if(w>=10&&h>=8){history();const r={id:crypto.randomUUID().replaceAll('-','').slice(0,12),text:'请输入文字',original_text:'',bbox:[x,y,w,h],x,y,font_id:fonts.find(f=>f.family==='Microsoft YaHei'&&f.style==='Regular')?.id||fonts[0].id,font_size:Math.max(4,Math.min(1000,h)),letter_spacing:0,color:'#182029',enabled:true,locked:false,erase_mode:'gradient',score:null};page().regions.push(r);selectedId=r.id;markDirty();renderRegions();renderInspector();$('textField').focus();$('textField').select();}
+    if(w>=10&&h>=8){history();const r={id:crypto.randomUUID().replaceAll('-','').slice(0,12),text:'请输入文字',original_text:'',bbox:[x,y,w,h],x,y,font_id:fonts.find(f=>f.family==='Microsoft YaHei'&&f.style==='Regular')?.id||fonts[0].id,font_size:Math.max(4,Math.min(1000,CanvasGeometry.roundStyle(h))),letter_spacing:0,color:'#182029',enabled:true,locked:false,erase_mode:'gradient',score:null};page().regions.push(r);selectedId=r.id;markDirty();renderRegions();renderInspector();$('textField').focus();$('textField').select();}
     drawing=false;document.body.classList.remove('drawing-mode');$('drawBtn').classList.remove('primary');updateCanvasTools();showPanel('inspector','textEditPanel');
-  }else if(pointer.moved)markDirty(pointer.type==='move'||pointer.type==='text-resize');
+  }else if(pointer.moved)markDirty(['move','text-resize','text-rotate'].includes(pointer.type));
   pointer=null;drawOverlay();try{$('overlay').releasePointerCapture(evt.pointerId);}catch{}
   if(!dirty&&page()?.regions.length)updatePreview().catch(e=>toast(e.message,true));
 });
 function cancelCanvasPointer(){
   if(!pointer)return;
-  if(pointer.moved)markDirty(pointer.type==='move'||pointer.type==='text-resize');
+  if(pointer.moved)markDirty(['move','text-resize','text-rotate'].includes(pointer.type));
   pointer=null;drawOverlay();
 }
 for(const event of ['pointercancel','lostpointercapture'])$('overlay').addEventListener(event,cancelCanvasPointer);

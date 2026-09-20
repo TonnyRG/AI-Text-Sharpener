@@ -20,6 +20,7 @@ from lxml import etree
 from PIL import Image
 
 from .fidelity import crop_evidence, _match
+from .geometry import source_frame, source_position, round_style
 from .typography import svg_document
 
 
@@ -152,7 +153,8 @@ def formula_layout(latex, size, stroke_width=0):
 
 
 def recognize_formula(image, region):
-    ev=crop_evidence(image,region['bbox'])
+    frame, source_box, _=source_frame(image,region)
+    ev=crop_evidence(frame,source_box)
     # Normalize colored/dark-slide ink without changing its two-dimensional layout.
     mask=np.pad(ev['mask'],12)
     normalized=np.uint8(np.clip((1-mask)*255,0,255))
@@ -170,7 +172,8 @@ def recognize_formula(image, region):
 
 def fit_formula(image, region):
     result=dict(region)
-    ev=crop_evidence(image,region['bbox'])
+    frame, source_box, transform=source_frame(image,region)
+    ev=crop_evidence(frame,source_box)
     ix,iy,iw,ih=ev['ink_box']
     base=formula_base(region.get('latex',''))
     max_size=min(iw/base['width'],ih/base['height'])*64
@@ -179,12 +182,14 @@ def fit_formula(image, region):
     target=cv2.resize(np.pad(ev['mask'],pad),None,fx=scale,fy=scale,interpolation=cv2.INTER_AREA)
     candidates=[]
     for factor in (.9,.95,1,1.025,1.05):
-        size=min(1000,max(4,max_size*factor))
+        size=round_style(min(1000,max(4,max_size*factor)))
         layout=formula_layout(region['latex'],size*scale,region.get('stroke_width',0)*scale)
         svg=svg_document(layout['width']+1,layout['height']+1,layout['body'])
         rgba=np.asarray(Image.open(io.BytesIO(resvg_py.svg_to_bytes(svg_string=svg))).convert('RGBA'))
         score,(dx,dy)=_match(target,rgba[:,:,3].astype(np.float32)/255)
-        candidates.append({'font_size':round(size,3),'score':round(score,4),'x':round(ev['x']-pad+dx/scale,2),'y':round(ev['y']-pad+dy/scale,2)})
+        full=formula_layout(region['latex'],size,region.get('stroke_width',0))
+        candidates.append({'font_size':size,'score':round(score,4),
+                           **source_position(ev['x']-pad+dx/scale,ev['y']-pad+dy/scale,full['width'],full['height'],transform)})
     result.update(max(candidates,key=lambda c:c['score']))
     result.update(color='#'+''.join(f'{v:02x}' for v in ev['color']),fit_status='formula_review',
                   fit_note='公式已按二维结构排版；相似度不保证符号正确。请核对 LaTeX，勾选「重绘此区域」查看对比。')

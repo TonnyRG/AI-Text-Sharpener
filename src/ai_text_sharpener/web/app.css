@@ -75,3 +75,7 @@ button:focus-visible,summary:focus-visible{outline:2px solid #438d70;outline-off
 @media(max-width:1150px){.viewbar{padding:9px 12px}.view-tools{flex-shrink:1}.canvas-foot #canvasHint{display:block}.batchbar .muted{flex-basis:auto;margin-left:auto}}
 @media(max-width:860px){#properties{display:block;padding:0 16px 16px}.property-section{margin-bottom:10px}.command-group+.command-group{padding-left:8px;margin-left:0}.canvas-tools button{padding:6px}.viewbar .view-tools{flex-wrap:wrap}}
 @media(max-width:560px){.panel-tabs [role=tab]{font-size:10px;white-space:normal}.panel-tabs .count{display:block;margin:0}.library-tabs{margin-top:12px}.canvas-foot{padding:8px}.canvas-zoom{margin-left:0}.batchbar{padding:9px}.command-group+.command-group{border:0;padding:0}.inspector-tabs .count{display:inline}.canvas-display{gap:6px}}
+
+.sheet>#overlay .rotation-stem{stroke:#176957;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
+.sheet>#overlay .rotation-handle{fill:white;stroke:#176957;stroke-width:1.5;vector-effect:non-scaling-stroke;cursor:grab;pointer-events:all}
+.round-style{display:flex;align-items:center;gap:6px;justify-content:space-between;margin-top:8px;font-size:10px;color:#7b8882}.round-style button{font-size:10px;padding:4px 6px;white-space:nowrap}

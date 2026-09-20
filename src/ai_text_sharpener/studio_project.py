@@ -192,6 +192,16 @@ def validate_regions(regions, width, height):
             raise ValueError("字号或字距超出允许范围。")
         if not 0 <= region.get("stroke_width", 0) <= 12:
             raise ValueError("笔画加粗必须在 0–12 像素之间。")
+        for key in ("rotation", "source_rotation"):
+            value = region.get(key,0)
+            if not isinstance(value,(int,float)) or not math.isfinite(value) or not -180 <= value <= 180:
+                raise ValueError("旋转角度必须在 -180–180 度之间。")
+        if "source_quad" in region:
+            quad = region["source_quad"]
+            if (not isinstance(quad,list) or len(quad)!=4 or any(not isinstance(p,list) or len(p)!=2 for p in quad)
+                or any(not isinstance(v,(int,float)) or not math.isfinite(v) for p in quad for v in p)
+                or any(not -width<=p[0]<=width*2 or not -height<=p[1]<=height*2 for p in quad)):
+                raise ValueError("原字方向框无效。")
         if region.get("kind") != "formula" and region.get("enabled", True) and region.get("font_id") not in font_catalog():
             raise ValueError("所选字体在本机不可用，请重新选择。")
         if not re.fullmatch(r"#[0-9a-fA-F]{6}", region.get("color", "")):
@@ -235,7 +245,9 @@ def compose_page(directory: Path, page: dict):
         layout = layouts[region["id"]]
         region["ink_width"] = round(layout["width"], 2)
         region["ink_height"] = round(layout["height"], 2)
-        body.append(f'<g data-region-id="{escape(region["id"], quote=True)}" transform="translate({region["x"]} {region["y"]})" fill="{region["color"]}" color="{region["color"]}">{layout["body"]}</g>')
+        rotation = region.get("rotation",0)
+        turn = f' rotate({rotation} {layout["width"]/2} {layout["height"]/2})' if rotation else ''
+        body.append(f'<g data-region-id="{escape(region["id"], quote=True)}" transform="translate({region["x"]} {region["y"]}){turn}" fill="{region["color"]}" color="{region["color"]}">{layout["body"]}</g>')
     # Explicit preservation restores the complete source crop last, even when
     # a neighboring erase mask or manually moved text overlaps it.
     for region in page["regions"]:

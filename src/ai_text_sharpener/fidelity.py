@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from .typography import candidate_fonts, family_weight_fonts, font_catalog, outline_layout, render_mask, supports
+from .geometry import round_style, rotated_bounds, source_frame, source_position
 
 
 def crop_evidence(image: np.ndarray, bbox: list[float]):
@@ -75,7 +76,8 @@ def fit_region(image: np.ndarray, region: dict, font_ids=None, progress=None) ->
     text = region["text"].strip()
     if not text:
         raise ValueError("请先输入正确的文字。")
-    evidence = crop_evidence(image, region["bbox"])
+    frame, source_box, transform = source_frame(image, region)
+    evidence = crop_evidence(frame, source_box)
     ix, iy, iw, ih = evidence["ink_box"]
     ids = font_ids or candidate_fonts(text)
     ids = [fid for fid in ids if fid in font_catalog() and supports(fid, text)]
@@ -100,16 +102,24 @@ def fit_region(image: np.ndarray, region: dict, font_ids=None, progress=None) ->
             best = None
             # Estimate spacing from the actual glyph geometry, then refine size.
             for factor in (.92, .97, 1.0, 1.035, 1.08):
-                size = estimated_size * factor
+                size = max(4,min(1000,estimated_size * factor))
                 natural = outline_layout(fid, text, round(size, 3), 0.0, stroke_width)
                 spacing = (iw - natural["width"]) / max(1, len(text) - 1)
                 spacing = float(np.clip(spacing, -size * .12, size * .35)) if len(text) > 1 else 0.0
+                size, spacing = round(size, 2), round(spacing, 2)
                 mask, _ = render_mask(fid, text, size * scale, spacing * scale, stroke_width * scale)
                 score, (dx, dy) = _match(target, mask)
+                # Prefer whole numbers when visual agreement is essentially tied.
+                integer_size, integer_spacing = round_style(size), round_style(spacing)
+                integer_mask, _ = render_mask(fid, text, integer_size*scale, integer_spacing*scale, stroke_width*scale)
+                integer_score, integer_pos = _match(target, integer_mask)
+                if integer_score >= score - .01:
+                    size, spacing, score, (dx,dy) = integer_size, integer_spacing, integer_score, integer_pos
+                layout = outline_layout(fid, text, size, spacing, stroke_width)
                 item = {"font_id": fid, "font_label": font_catalog()[fid]["label"],
                         "font_size": round(size, 2), "letter_spacing": round(spacing, 2), "stroke_width": stroke_width,
-                        "x": round(evidence["x"] - pad + dx / scale, 2),
-                        "y": round(evidence["y"] - pad + dy / scale, 2),
+                        **source_position(evidence["x"]-pad+dx/scale, evidence["y"]-pad+dy/scale,
+                                          layout["width"], layout["height"], transform),
                         "score": round(score, 4)}
                 if best is None or item["score"] > best["score"]:
                     best = item
@@ -156,9 +166,8 @@ def automatic_fit_failure(region, layout):
         return "拟合与原图差异过大，已保留原图。可校正内容或改为公式区域。"
     x, y, w, h = region["bbox"]
     tolerance = max(5, h * .22)
-    if (region["x"] < x-tolerance or region["y"] < y-tolerance or
-        region["x"] + layout["width"] > x+w+tolerance or
-        region["y"] + layout["height"] > y+h+tolerance):
+    rx, ry, rw, rh = rotated_bounds(region["x"], region["y"], layout["width"], layout["height"], region.get("rotation", 0))
+    if (rx < x-tolerance or ry < y-tolerance or rx+rw > x+w+tolerance or ry+rh > y+h+tolerance):
         return "自动拟合超出原字范围，已保留原图。"
     return None
 
@@ -172,13 +181,27 @@ def erase_regions(image: np.ndarray, regions: list[dict]) -> np.ndarray:
         if mode == "none":
             continue
         try:
-            ev = crop_evidence(image, region["bbox"])
+            frame, source_box, transform = source_frame(image, region)
+            ev = crop_evidence(frame, source_box)
         except ValueError:
             continue
         ph, pw = ev["patch"].shape[:2]
         x, y = ev["x"], ev["y"]
         radius = max(1, int(round(ph * .045)))
         mask = cv2.dilate(ev["binary"], np.ones((radius * 2 + 1, radius * 2 + 1), np.uint8))
+        background = ev["background"].round().astype(np.uint8)
+        if transform is not None:
+            rotation, origin, _ = transform
+            origin = origin + rotation @ np.array([x,y])
+            corners = np.array([[0,0],[pw,0],[pw,ph],[0,ph]]) @ rotation.T + origin
+            low = np.maximum(0, np.floor(corners.min(axis=0)).astype(int))
+            high = np.minimum([image.shape[1],image.shape[0]], np.ceil(corners.max(axis=0)).astype(int))
+            x,y = map(int,low);pw,ph = map(int,high-low)
+            if pw<=0 or ph<=0:
+                continue
+            matrix = np.column_stack((rotation,origin-low))
+            mask = cv2.warpAffine(mask,matrix,(pw,ph),flags=cv2.INTER_NEAREST)
+            background = cv2.warpAffine(background,matrix,(pw,ph),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
         if mode == "inpaint":
             # Include context outside the OCR box to reconstruct strokes near edges.
             margin = max(8, radius * 3)
@@ -191,6 +214,6 @@ def erase_regions(image: np.ndarray, regions: list[dict]) -> np.ndarray:
             roi[local_mask > 0] = repaired[local_mask > 0]
         else:
             roi = output[y:y+ph, x:x+pw]
-            repaired = ev["background"].round().astype(np.uint8)
+            repaired = background
             roi[mask > 0] = repaired[mask > 0]
     return output

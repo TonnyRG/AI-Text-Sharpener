@@ -77,3 +77,40 @@ test('nearest target wins; page center wins an exact tie',()=>{
 test('page center guides align centers rather than snapping a text edge to the midpoint',()=>{
   assert.equal(snapMove(moving,479,100,slide).guides.length,0);
 });
+
+test('rotated resize keeps the opposite corner fixed in page coordinates',()=>{
+  for(const rotation of [27,-40,90])for(const corner of ['nw','ne','se','sw']){
+    const r={...start,rotation},a=rotation*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+    const west=corner.includes('w'),north=corner.includes('n');
+    const anchor=v=>({x:v.x+v.ink_width/2+c*(west?1:-1)*v.ink_width/2-s*(north?1:-1)*v.ink_height/2,
+      y:v.y+v.ink_height/2+s*(west?1:-1)*v.ink_width/2+c*(north?1:-1)*v.ink_height/2});
+    const old=anchor(r),resized=resizeText(r,corner,51,23),next=anchor(resized);
+    close(old.x,next.x);close(old.y,next.y);
+    assert.equal(resized.font_size,Math.round(resized.font_size));
+    assert.equal(resized.letter_spacing,Math.round(resized.letter_spacing));
+  }
+});
+test('rotation gesture uses the center and supports 15-degree steps across the seam',()=>{
+  const {rotationAt}=require('../src/ai_text_sharpener/web/canvas-geometry.js');
+  const r={x:0,y:0,ink_width:200,ink_height:40,rotation:0};
+  assert.equal(rotationAt(r,{x:100,y:-20},{x:140,y:20}),90);
+  const a=-70*Math.PI/180;
+  assert.equal(rotationAt(r,{x:100,y:-20},{x:100+40*Math.cos(a),y:20+40*Math.sin(a)},true),15);
+  assert.equal(rotationAt({...r,rotation:170},{x:100,y:-20},{x:140,y:20}),-100);
+});
+test('a rotated text frame snaps by visible bounds and preserves its center',()=>{
+  const r={...moving,rotation:90};
+  const result=snapMove(r,384,253,slide);
+  close(result.x,380);close(result.y,250);
+  assert.equal(result.guides.length,2);
+});
+test('style rounding uses half away from zero, including negative letter spacing',()=>{
+  const {roundStyle}=require('../src/ai_text_sharpener/web/canvas-geometry.js');
+  assert.deepEqual([12.49,12.5,-1.5,-1.49].map(roundStyle),[12,13,-2,-1]);
+});
+test('parallel slanted text is not reported as overlapping merely because envelopes overlap',()=>{
+  const {intersects}=require('../src/ai_text_sharpener/web/canvas-geometry.js');
+  const a={x:100,y:100,ink_width:300,ink_height:20,rotation:45};
+  assert.equal(intersects(a,{...a,x:70,y:130}),false);
+  assert.equal(intersects(a,{...a,x:102,y:102}),true);
+});

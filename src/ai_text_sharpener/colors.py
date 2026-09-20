@@ -7,6 +7,7 @@ import re
 import numpy as np
 
 from .fidelity import crop_evidence
+from .geometry import source_frame
 from .typography import outline_layout
 
 
@@ -55,7 +56,8 @@ def recover_colors(image, region):
     if region.get("score") is not None and region["score"] < .65:
         return {"color_note": "文字拟合较弱，暂不自动分色；请先核对字体与字距。"}
     layout = outline_layout(region["font_id"], text, region["font_size"], region.get("letter_spacing", 0))
-    evidence = crop_evidence(image, region["bbox"])
+    frame, source_box, _ = source_frame(image, region)
+    evidence = crop_evidence(frame, source_box)
     patch, background = evidence["patch"], evidence["background"]
     ix, iy, iw, ih = evidence["ink_box"]
     residual = np.linalg.norm(patch - background, axis=2)
