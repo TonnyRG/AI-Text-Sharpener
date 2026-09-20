@@ -45,3 +45,6 @@ button:focus-visible,summary:focus-visible{outline:2px solid #438d70;outline-off
 #reviewDialog{width:760px;max-width:calc(100vw - 36px);max-height:90vh}#reviewList{max-height:52vh;overflow:auto}.review-toolbar,.review-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.review-toolbar{margin:15px 0;font-size:12px}.review-toolbar select{width:auto}.review-card{padding:12px 2px;border-bottom:1px solid var(--line)}.review-card strong{font-size:12px;overflow-wrap:anywhere}.review-card p{font-size:11px;color:#a06b2d;margin:6px 0}.review-actions{margin-top:10px}.review-actions button{font-size:11px;padding:6px 9px}#regionReviewHint{color:#8d692e}#reviewDialog>.dialog-actions{border-top:1px solid var(--line);padding-top:12px}
 
 .color-runs{display:grid;gap:5px;margin-top:10px;max-height:180px;overflow:auto}.color-runs label,.selection-color{display:flex;align-items:center;gap:8px;font-size:11px}.color-runs span{overflow-wrap:anywhere}.color-runs input,.selection-color input{width:30px;height:26px;padding:0;border:0;flex-shrink:0}.selection-color{margin-top:12px}.selection-color button{font-size:11px;padding:6px 8px}
+
+.sheet>#overlay .snap-guide{pointer-events:none;stroke:#bf3995;stroke-width:1;stroke-dasharray:6 4;vector-effect:non-scaling-stroke}
+.view-tools{flex-wrap:wrap}

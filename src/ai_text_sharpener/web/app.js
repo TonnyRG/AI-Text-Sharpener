@@ -279,7 +279,7 @@ function updateCanvasHint() {
     mode==='original'?'正在查看原图 · 切换「重绘」后可拖动文字框编辑。':
     region()?.locked?'此区域已锁定 · 取消「锁定样式」后可拖动。':
     region()&&!region().enabled?'此区域保留原图 · 开启「重绘此区域」后可编辑。':
-    '选中绿色框：拖动框内移动，拖动四角缩放；按住看原图可对照。';
+    '拖动框内移动，四角缩放；靠近对齐位置自动吸附，按住 Alt 临时关闭。';
 }
 function installLiveResult(svg) {
   const root=new DOMParser().parseFromString(svg,'image/svg+xml').documentElement;
@@ -318,7 +318,7 @@ for(const event of ['pointerup','pointercancel','lostpointercapture'])$('peekBtn
 $('peekBtn').addEventListener('keydown',evt=>{if([' ','Enter'].includes(evt.key)){evt.preventDefault();peekOriginal(true);}});
 $('peekBtn').addEventListener('keyup',evt=>{if([' ','Enter'].includes(evt.key)){evt.preventDefault();peekOriginal(false);}});
 $('peekBtn').addEventListener('blur',()=>peekOriginal(false));
-window.addEventListener('blur',()=>peekOriginal(false));
+window.addEventListener('blur',()=>{cancelCanvasPointer();peekOriginal(false);});
 
 function rect(x,y,w,h,classes) {
   const el=document.createElementNS('http://www.w3.org/2000/svg','rect');
@@ -354,6 +354,12 @@ function drawOverlay() {
     handles(r,r.x,r.y,r.ink_width,r.ink_height);
   }
   if(pointer?.type==='draw')overlay.append(rect(Math.min(pointer.sx,pointer.ex),Math.min(pointer.sy,pointer.ey),Math.abs(pointer.ex-pointer.sx),Math.abs(pointer.ey-pointer.sy),'drawing'));
+  for(const guide of pointer?.guides||[]){
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line'),vertical=guide.axis==='x';
+    for(const [key,value]of Object.entries({x1:vertical?guide.position:guide.from,y1:vertical?guide.from:guide.position,
+      x2:vertical?guide.position:guide.to,y2:vertical?guide.to:guide.position,class:'snap-guide','aria-hidden':'true'}))line.setAttribute(key,value);
+    overlay.append(line);
+  }
 }
 
 function resize() {
@@ -385,13 +391,15 @@ $('overlay').addEventListener('pointerdown',evt=>{
       if(!liveLayers.has(r.id)){
         updatePreview().catch(e=>toast(e.message,true));toast('正在准备文字预览，请稍后拖动。');return;
       }
-      pointer={type:handle?'text-resize':'move',handle,sx:pos.x,sy:pos.y,x:r.x,y:r.y,start:clone(r),moved:false};
+      pointer={type:handle?'text-resize':'move',handle,sx:pos.x,sy:pos.y,x:r.x,y:r.y,start:clone(r),moved:false,
+        targets:page().regions.filter(other=>liveLayers.has(other.id)).map(other=>({...other})),guides:[]};
     }
   }
   if(pointer){clearTimeout(previewTimer);previewVersion++;$('overlay').setPointerCapture(evt.pointerId);evt.preventDefault();}
 });
-$('overlay').addEventListener('pointermove',evt=>{
+function moveCanvasPointer(evt) {
   if(!pointer)return;const pos=position(evt);
+  pointer.lastEvent={clientX:evt.clientX,clientY:evt.clientY,altKey:evt.altKey};
   if(pointer.type==='draw'){pointer.ex=pos.x;pointer.ey=pos.y;}
   else {
     const dx=pos.x-pointer.sx,dy=pos.y-pointer.sy;if(!pointer.moved&&Math.abs(dx)+Math.abs(dy)<.5)return;
@@ -404,7 +412,13 @@ $('overlay').addEventListener('pointermove',evt=>{
     }else{
       const r=region();
       if(pointer.type==='text-resize')Object.assign(r,CanvasGeometry.resizeText(pointer.start,pointer.handle,dx,dy));
-      else{r.x=Math.round((pointer.x+dx)*2)/2;r.y=Math.round((pointer.y+dy)*2)/2;}
+      else{
+        const p=page(),snapped=CanvasGeometry.snapMove(pointer.start,
+          Math.max(-p.width,Math.min(p.width*2,Math.round((pointer.x+dx)*2)/2)),
+          Math.max(-p.height,Math.min(p.height*2,Math.round((pointer.y+dy)*2)/2)),p,
+          {enabled:$('snapChk').checked&&!evt.altKey,scale:$('sheet').getBoundingClientRect().width/p.width,regions:pointer.targets});
+        r.x=snapped.x;r.y=snapped.y;pointer.guides=snapped.guides;
+      }
       r.x=Math.max(-page().width,Math.min(page().width*2,r.x));r.y=Math.max(-page().height,Math.min(page().height*2,r.y));
       r.fit_status='edited';r.score=null;r.alternatives=[];
       transformLiveRegion(r);renderGeometryFields(r);renderFitStatus(r);
@@ -412,7 +426,8 @@ $('overlay').addEventListener('pointermove',evt=>{
     }
   }
   drawOverlay();
-});
+}
+$('overlay').addEventListener('pointermove',moveCanvasPointer);
 $('overlay').addEventListener('pointerup',evt=>{
   if(!pointer)return;
   if(pointer.type==='draw') {
@@ -424,7 +439,16 @@ $('overlay').addEventListener('pointerup',evt=>{
   pointer=null;drawOverlay();try{$('overlay').releasePointerCapture(evt.pointerId);}catch{}
   if(!dirty&&page()?.regions.length)updatePreview().catch(e=>toast(e.message,true));
 });
-$('overlay').addEventListener('pointercancel',()=>{if(pointer?.moved)markDirty();pointer=null;drawOverlay();});
+function cancelCanvasPointer(){
+  if(!pointer)return;
+  if(pointer.moved)markDirty(pointer.type==='move'||pointer.type==='text-resize');
+  pointer=null;drawOverlay();
+}
+for(const event of ['pointercancel','lostpointercapture'])$('overlay').addEventListener(event,cancelCanvasPointer);
+for(const event of ['keydown','keyup'])window.addEventListener(event,evt=>{
+  if(evt.key==='Alt'&&pointer?.type==='move'&&pointer.lastEvent)
+    moveCanvasPointer({...pointer.lastEvent,altKey:evt.type==='keydown'});
+});
 
 async function runJob(kind, extra={}) {
   if(busy||!project)return;

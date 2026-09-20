@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {resizeText}=require('../src/ai_text_sharpener/web/canvas-geometry.js');
+const {resizeText,snapMove}=require('../src/ai_text_sharpener/web/canvas-geometry.js');
 const start={x:80,y:50,ink_width:200,ink_height:40,font_size:40,letter_spacing:2,stroke_width:1};
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
 for(const corner of ['nw','ne','se','sw'])test(`${corner}: scale glyphs and keep opposite corner fixed`,()=>{
@@ -30,4 +30,50 @@ test('a sideways drag still scales both axes, including formulas',()=>{
   const r=resizeText({...start,letter_spacing:0,stroke_width:0},'se',50,0);
   close(r.ink_width/start.ink_width,r.ink_height/start.ink_height);
   close(r.font_size/start.font_size,r.ink_height/start.ink_height);
+});
+
+const slide={width:960,height:540};
+const moving={...start,id:'moving',text:'Title',enabled:true,bbox:[80,50,200,40]};
+const target={...moving,id:'target',x:610,y:340,ink_width:100,ink_height:30};
+test('page center snaps both axes exactly and draws full-page guides',()=>{
+  const before=structuredClone(moving),r=snapMove(moving,384,253,slide);
+  assert.deepEqual(r,{x:380,y:250,guides:[
+    {axis:'x',position:480,from:0,to:540},{axis:'y',position:270,from:0,to:960}]});
+  assert.deepEqual(moving,before);
+});
+test('page edges snap without changing dimensions or source erase bounds',()=>{
+  const r=snapMove(moving,4,497,slide);
+  assert.equal(r.x,0);assert.equal(r.y,500);
+  assert.deepEqual(Object.keys(r).sort(),['guides','x','y']);
+});
+test('other text edges and centers align, with guides spanning both frames',()=>{
+  const options={regions:[target]};
+  const edge=snapMove(moving,414,342,slide,options);
+  assert.equal(edge.x,410);assert.equal(edge.y,340);
+  assert.deepEqual(edge.guides,[{axis:'x',position:610,from:340,to:380},{axis:'y',position:340,from:410,to:710}]);
+  const center=snapMove(moving,562,337,slide,options);
+  assert.equal(center.x,560);assert.equal(center.y,335);
+});
+test('six screen pixels remain the threshold at fit, 100% and 200% zoom',()=>{
+  for(const scale of [.2,1,2]){
+    assert.equal(snapMove(moving,380+5.9/scale,100,slide,{scale}).x,380);
+    assert.equal(snapMove(moving,380+6.1/scale,100,slide,{scale}).guides.length,0);
+  }
+});
+test('free movement and modifier bypass have no guides',()=>{
+  assert.deepEqual(snapMove(moving,213,117,slide),{x:213,y:117,guides:[]});
+  assert.deepEqual(snapMove(moving,384,253,slide,{enabled:false}),{x:384,y:253,guides:[]});
+});
+test('self, disabled, empty and invalid text are not snap targets; locked text is',()=>{
+  const options={regions:[{...target,id:moving.id},{...target,enabled:false},{...target,text:' '},{...target,ink_width:NaN}]};
+  assert.deepEqual(snapMove(moving,414,342,slide,options),{x:414,y:342,guides:[]});
+  assert.equal(snapMove(moving,414,342,slide,{regions:[{...target,locked:true}]}).x,410);
+});
+test('nearest target wins; page center wins an exact tie',()=>{
+  const competing={...target,x:588};
+  assert.equal(snapMove(moving,384,100,slide,{regions:[competing]}).x,380);
+  assert.equal(snapMove(moving,385,100,slide,{regions:[competing]}).x,388);
+});
+test('page center guides align centers rather than snapping a text edge to the midpoint',()=>{
+  assert.equal(snapMove(moving,479,100,slide).guides.length,0);
 });
