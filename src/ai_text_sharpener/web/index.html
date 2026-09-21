@@ -4,42 +4,41 @@
 <body>
 <header class="topbar">
   <div class="brand"><img src="/icon.svg" alt=""><strong>文字重绘</strong></div>
-  <div class="privacy"><i></i> 本地运行</div>
   <button id="helpBtn" class="quiet">使用说明</button>
 </header>
 <main>
   <aside class="library">
     <div class="section-top"><span>工作区</span><div class="workspace-tools"><button id="manageWorkspacesBtn" class="quiet">管理</button><button id="newBtn" class="icon-btn" title="导入为新项目">＋</button></div></div>
     <select id="projectSelect" aria-label="切换项目"><option value="">选择项目</option></select>
-    <button id="importBtn" class="import-btn">＋ 导入图片 / PPTX</button>
+    <button id="importBtn" title="图片，或每页单张铺满图片的 PPTX；支持拖入文件" class="import-btn">＋ 导入图片 / PPTX</button>
     <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,.pptx" multiple hidden>
     <div class="panel-tabs library-tabs" role="tablist" aria-label="工作区导航" data-tabs="library">
       <button id="pagesTab" role="tab" aria-selected="true" aria-controls="pagesPanel" data-panel="pagesPanel">页面 <span id="pageCount" class="count">0</span></button>
       <button id="regionsTab" role="tab" aria-selected="false" aria-controls="regionsPanel" data-panel="regionsPanel" tabindex="-1">本页文字 <span id="regionCount" class="count">0</span></button>
     </div>
-    <section id="pagesPanel" class="library-panel" role="tabpanel" aria-labelledby="pagesTab"><div id="pages" class="pages"><p class="muted empty-small">导入后，页面会显示在这里</p></div></section>
-    <section id="regionsPanel" class="library-panel" role="tabpanel" aria-labelledby="regionsTab" hidden><p class="panel-caption">点击文字定位并编辑</p><div id="regions" class="regions"></div></section>
-    <div class="library-foot">自动保存到本机 <span id="saveState">· 准备就绪</span></div>
+    <section id="pagesPanel" class="library-panel" role="tabpanel" aria-labelledby="pagesTab"><div id="pages" class="pages"><p class="muted empty-small">暂无页面</p></div></section>
+    <section id="regionsPanel" class="library-panel" role="tabpanel" aria-labelledby="regionsTab" hidden><div id="regions" class="regions"></div></section>
+    <div class="library-foot" title="编辑后自动保存"><span id="saveState" role="status"></span></div>
   </aside>
   <section class="workspace">
     <div class="toolbar">
-      <div><strong id="pageTitle">未打开项目</strong><small id="pageMeta">导入文件或选择已有项目</small></div>
+      <div><strong id="pageTitle">未打开项目</strong><small id="pageMeta"></small></div>
       <div class="actions"><div class="history-actions"><button id="undoBtn" title="撤销 Ctrl+Z" disabled>↶</button><button id="redoBtn" title="重做 Ctrl+Shift+Z / Ctrl+Y" disabled>↷</button></div><button id="exportBtn" class="primary" disabled>导出…</button></div>
     </div>
     <div class="batchbar">
       <div class="command-group" role="group" aria-label="页面识别"><button id="analyzeBtn" disabled>识别本页</button><button id="analyzeAllBtn" disabled title="选择重新识别全部页面，或仅处理未完成页面">批量识别…</button></div>
       <div class="command-group" role="group" aria-label="结果校对"><button id="reviewBtn" disabled>集中复核</button><button id="colorsBtn" disabled title="选择当前页或全部页面恢复多色文字">恢复多色…</button></div>
-      <span id="batchSummary" class="muted">导入后可批量处理全部页面</span>
+      <span id="batchSummary" class="muted"></span>
     </div>
     <div id="welcome" class="welcome">
       <h1>导入文件</h1>
-      <p>可拖入图片或 PPTX，也可从左侧选择已有项目。</p>
+
       <div class="welcome-actions"><button id="welcomeImport" class="primary large">选择文件</button><button id="demoBtn" class="large">加载测试示例</button></div>
-      <div class="welcome-note">支持 PNG、JPG、WebP，以及每页单张铺满图片的 PPTX</div>
+      <div class="welcome-note">PNG · JPG · WebP · PPTX</div>
     </div>
     <div id="editor" class="editor" hidden>
       <div class="viewbar">
-        <div class="canvas-tools" role="group" aria-label="画布编辑工具"><button id="selectBtn" class="active" aria-pressed="true" title="选择文字框，拖动移动，拖四角缩放">选择 / 移动</button><button id="drawBtn" aria-pressed="false" title="在原图上框选要重绘的文字">＋ 添加文字</button></div>
+        <div class="canvas-tools" role="group" aria-label="画布编辑工具"><button id="selectBtn" class="active" aria-pressed="true" title="空白处拖动框选；框内移动、四角缩放、圆点旋转；点击空白取消选择">选择 / 移动</button><button id="drawBtn" aria-pressed="false" title="在原图上框选要重绘的文字">＋ 添加文字</button></div>
         <div class="view-tools"><div class="segmented" id="viewModes" role="group" aria-label="画布视图"><button data-mode="original" class="active">原图</button><button data-mode="result">重绘</button><button data-mode="compare">滑动对比</button></div><button id="peekBtn" title="按住查看原图，松开返回；也可用键盘空格或回车" disabled>按住看原图</button></div>
       </div>
       <div id="viewport" class="viewport"><div id="sheet" class="sheet"><img id="sourceImage" alt="原始图片" draggable="false"><img id="resultImage" alt="文字重绘结果" draggable="false" hidden><div id="liveResult" aria-label="实时重绘结果" hidden></div><div id="compareLine" hidden><span>◀ ▶</span></div><svg id="overlay" aria-label="文字区域画布"></svg></div></div>
@@ -47,14 +46,14 @@
         <div class="canvas-display" role="group" aria-label="画布显示设置"><label><input type="checkbox" id="boxesChk" checked> 文字框</label><label title="拖动文字时对齐页面或其他文字框；按住 Alt 临时关闭"><input type="checkbox" id="snapChk" checked> 对齐吸附</label></div>
         <label id="compareControl" hidden>原图 <input type="range" id="compareRange" min="0" max="100" value="50" aria-label="原图与重绘对比比例">重绘</label>
         <div class="canvas-zoom"><select id="zoom" aria-label="缩放"><option value="fit">适应窗口</option><option value="1">100%</option><option value="2">200%</option></select><button id="previewBtn" title="编辑后自动更新；也可手动刷新，快捷键 Ctrl+Enter">刷新预览</button></div>
-        <span id="canvasHint">选中文字框：拖动框内移动，拖动四角缩放。</span>
+        <span id="canvasHint" role="status"></span>
       </div>
     </div>
     <div id="jobBar" class="jobbar" hidden><div><span class="spinner"></span><span id="jobMessage">处理中…</span><button id="cancelBtn">取消</button></div><progress id="progress" max="100" value="0"></progress></div>
   </section>
   <aside class="inspector" aria-label="区域属性">
-    <div class="inspector-title"><strong>区域属性</strong><span>编辑后自动预览</span></div>
-    <div id="noSelection" class="no-selection"><strong>未选择文字区域</strong><p>点击文字框或在空白处拖动框选；点击空白可取消选择。</p></div>
+    <div class="inspector-title"><strong>区域属性</strong></div>
+    <div id="noSelection" class="no-selection"><strong>未选择文字区域</strong></div>
     <div id="multiSelection" hidden>
       <div class="region-summary"><strong id="selectionCount"></strong><p id="batchScope" class="field-help"></p></div>
       <details class="property-section" open>
@@ -64,15 +63,15 @@
           <input id="batchFontSearch" type="search" placeholder="搜索本机字体…" aria-label="批量搜索字体">
           <select id="batchFontField" aria-label="批量字体及字重"></select>
           <div class="two-col">
-            <label class="field">字号 <span>px</span><input id="batchSizeField" type="number" min="4" max="1000" step="1" aria-label="批量字号"></label>
-            <label class="field">字距 <span>px</span><input id="batchSpacingField" type="number" min="-300" max="300" step="1" aria-label="批量字距"></label>
+            <label class="field">字号 <span>px</span><input id="batchSizeField" title="统一字号，自动取整" type="number" min="4" max="1000" step="1" aria-label="批量字号"></label>
+            <label class="field">字距 <span>px</span><input id="batchSpacingField" title="统一普通文字的字距，自动取整" type="number" min="-300" max="300" step="1" aria-label="批量字距"></label>
           </div>
           <label class="field">笔画加粗 <span>px</span><input id="batchStrokeField" type="number" min="0" max="12" step="any" aria-label="批量笔画加粗"></label>
-          <label class="field">文字颜色<div class="batch-color"><input id="batchColorField" type="color" aria-label="批量文字颜色"><input id="batchColorText" type="text" placeholder="多种颜色" aria-label="批量颜色值" maxlength="7"></div></label>
-          <p class="field-help">不同值显示为「多种」。修改哪一项，就只统一哪一项；字号、字距自动取整。选择颜色会统一整行配色。字体与字距仅用于普通文字。</p>
+          <label class="field">文字颜色<div class="batch-color"><input id="batchColorField" title="统一所选区域的整行颜色" type="color" aria-label="批量文字颜色"><input id="batchColorText" type="text" placeholder="多种颜色" aria-label="批量颜色值" maxlength="7"></div></label>
+
         </div>
       </details>
-      <p class="field-help">拖动已选文字可整体移动；Shift 点击增减选择，Ctrl+Z 撤销批量修改。</p>
+
       <button id="deleteSelected" class="danger">删除选中区域</button>
     </div>
     <div id="properties" hidden>
@@ -93,9 +92,9 @@
           <div id="formulaPanel" hidden>
             <label class="field">LaTeX 公式<textarea id="latexField" rows="4" spellcheck="false" placeholder="例如：E=mc^2"></textarea></label>
             <div class="fit-buttons"><button id="recognizeFormulaBtn">重新识别公式</button><button id="fitFormulaBtn">匹配公式位置</button></div>
-            <p class="field-help">公式默认保留原图，核对后开启「重绘此区域」。</p>
+
           </div>
-          <details class="field-details"><summary>识别原文与说明</summary><div id="originalText" class="muted original-text"></div><p class="field-help">清空文字可擦除原字；删除区域会恢复原图。公式采用数学字体，请核对上下标、分数与符号。</p></details>
+          <details class="field-details"><summary>识别原文</summary><div id="originalText" class="muted original-text"></div></details>
         </div>
       </details>
       <details class="property-section" open>
@@ -106,53 +105,53 @@
             <input id="fontSearch" type="search" placeholder="搜索本机字体…" aria-label="搜索字体">
             <select id="fontField" aria-label="字体及字重"></select>
           </div>
-          <div class="two-col"><label class="field">字号 <span>px</span><input id="sizeField" type="number" min="4" max="1000" step="1"></label><label class="field">字距 <span>px</span><input id="spacingField" type="number" min="-300" max="300" step="1"></label></div>
-          <p class="field-help">字号、字距自动四舍五入为整数</p><div class="two-col style-row"><label class="field">笔画加粗 <span>px</span><input id="strokeField" type="number" min="0" max="12" step="any" value="0" title="0 为字体原始字重；需变细时选择较轻字重"></label><label class="field">文字颜色<div class="color-control"><input id="colorField" type="color" aria-label="文字颜色"><span id="colorValue"></span></div></label></div>
+          <div class="two-col"><label class="field">字号 <span>px</span><input id="sizeField" title="自动四舍五入为整数" type="number" min="4" max="1000" step="1"></label><label class="field">字距 <span>px</span><input id="spacingField" title="自动四舍五入为整数" type="number" min="-300" max="300" step="1"></label></div>
+          <div class="two-col style-row"><label class="field">笔画加粗 <span>px</span><input id="strokeField" type="number" min="0" max="12" step="any" value="0" title="0 为字体原始字重；需变细时选择较轻字重"></label><label class="field">文字颜色<div class="color-control"><input id="colorField" type="color" aria-label="文字颜色"><span id="colorValue"></span></div></label></div>
           <details id="multiColorPanel" class="field-details"><summary>多色文字</summary>
             <p id="colorNote" class="field-help"></p>
             <div class="review-actions"><button id="recoverColorBtn">从原图提取</button><button id="singleColorBtn">整行统一颜色</button></div>
             <div id="colorRuns" class="color-runs"></div>
-            <div class="selection-color"><input id="selectionColor" type="color" value="#bd7917" aria-label="选中文字的颜色"><button id="applySelectionColor">给选中文字着色</button></div>
-            <p class="field-help">在上方「文字内容」中选中字，再选择颜色并应用。改动文字内容后需重新设置分色；移动与缩放会保留配色。</p>
+            <div class="selection-color"><input id="selectionColor" type="color" value="#bd7917" aria-label="选中文字的颜色"><button id="applySelectionColor" title="先在文字内容中选中字，再应用颜色">给选中文字着色</button></div>
+
           </details>
           <div id="fontMatchActions" class="matching-actions"><button id="fitBtn" class="primary">自动匹配字体</button><button id="fitFontBtn">按当前字体匹配</button></div>
           <details id="alternativesPanel" class="field-details" hidden><summary>其他字体候选</summary><div id="alternatives" class="alternatives"></div></details>
-          <details class="field-details"><summary>匹配说明</summary><p id="fitNote" class="fit-note"></p><p class="field-help">笔画加粗为 0 时使用字体原始字重；偏细可增加 0.1–0.5 px，需变细时选择较轻字重。</p></details>
+          <details class="field-details"><summary>匹配说明</summary><p id="fitNote" class="fit-note"></p></details>
         </div>
       </details>
       <details class="property-section" open>
         <summary><span>文字位置与大小</span><span class="section-meta">px</span></summary>
-        <div class="section-body"><div class="two-col"><label class="field">X<input id="xField" type="number" step="any"></label><label class="field">Y<input id="yField" type="number" step="any"></label></div><label class="field">旋转角度 <span>° · 顺时针为正</span><input id="rotationField" type="number" min="-180" max="180" step="1" value="0"></label><p class="field-help">拖动绿色框移动，四角缩放，框上方圆点旋转。按住 Shift 以 15° 为步长；旋转不改变原字擦除位置。</p></div>
+        <div class="section-body"><div class="two-col"><label class="field">X<input id="xField" type="number" step="any"></label><label class="field">Y<input id="yField" type="number" step="any"></label></div><label class="field">旋转角度 <span>°</span><input id="rotationField" title="顺时针为正；拖动旋转手柄时按住 Shift 按 15° 旋转" type="number" min="-180" max="180" step="1" value="0"></label></div>
       </details>
       </section>
       <section id="sourceEditPanel" role="tabpanel" aria-labelledby="sourceEditTab" hidden>
-      <p class="panel-caption repair-caption">调整原字的擦除范围与背景补全。移动重绘文字请使用「文字编辑」或直接拖动绿色框。</p>
+
       <details id="sourceSection" class="property-section">
         <summary><span>原字擦除范围</span></summary>
         <div class="section-body">
           <button id="editBoxBtn" class="full-width" type="button" aria-pressed="false">调整原字擦除范围</button>
           <div class="two-col"><label class="field">框 X<input id="boxXField" type="number" min="0" step="any"></label><label class="field">框 Y<input id="boxYField" type="number" min="0" step="any"></label></div>
           <div class="two-col"><label class="field">宽度<input id="boxWField" type="number" min="3" step="any"></label><label class="field">高度<input id="boxHField" type="number" min="3" step="any"></label></div>
-          <label class="field">原图文字角度 <span>°</span><input id="sourceRotationField" type="number" min="-180" max="180" step="1" value="0"></label><p class="field-help">识别时自动记录，用于匹配和擦除原字。手动框选倾斜文字时可在此设置，再自动匹配字体。</p><label class="field">背景处理<select id="eraseField"><option value="gradient">纯色 / 渐变补全</option><option value="inpaint">纹理局部修复</option><option value="none">保留背景，仅叠字</option></select></label>
-          <details class="field-details"><summary>如何调整原字范围</summary><p class="field-help">拖动橙色框的边角调整大小，拖动框内移动。这里只调整原图中要擦除的范围。移动、缩放重绘文字，请直接拖绿色框；擦除范围会留在原处。</p></details>
+          <label class="field">原图文字角度 <span>°</span><input id="sourceRotationField" title="原图中的文字方向，用于匹配与擦除；不会随重绘文字旋转改变" type="number" min="-180" max="180" step="1" value="0"></label><label class="field">背景处理<select id="eraseField"><option value="gradient">纯色 / 渐变补全</option><option value="inpaint">纹理局部修复</option><option value="none">保留背景，仅叠字</option></select></label>
+
         </div>
       </details>
-      <div class="region-footer"><button id="deleteRegion" class="danger quiet">删除文字区域</button><span>移除编辑框并恢复原图</span></div>
+      <div class="region-footer"><button id="deleteRegion" title="移除编辑框并恢复原图" class="danger quiet">删除文字区域</button></div>
       </section>
     </div>
   </aside>
 </main>
 <div id="toast" class="toast" role="status" hidden></div>
-<dialog id="colorsDialog" aria-labelledby="colorsTitle"><div class="dialog-head"><h2 id="colorsTitle">恢复多色文字</h2><button id="closeColors" class="icon-btn" aria-label="关闭颜色恢复">×</button></div><p>从原图提取同一句中的强调色，保留现有文字、字体与位置。</p><p class="field-help">跳过保留原图、锁定和手动配色的区域。识别不可靠时保留当前颜色；完成后请核对分色边界。可切换到对应页面撤销。</p><div class="dialog-actions"><button id="colorsCurrent">当前页</button><button id="colorsAll" class="primary">全部页面</button></div></dialog>
+<dialog id="colorsDialog" aria-labelledby="colorsTitle"><div class="dialog-head"><h2 id="colorsTitle">恢复多色文字</h2><button id="closeColors" class="icon-btn" aria-label="关闭颜色恢复">×</button></div><div class="dialog-actions"><button id="colorsCurrent">当前页</button><button id="colorsAll" class="primary">全部页面</button></div></dialog>
 <dialog id="reviewDialog" aria-labelledby="reviewTitle">
   <div class="dialog-head"><h2 id="reviewTitle">异常区域集中复核</h2><button id="closeReview" class="icon-btn" aria-label="关闭复核">×</button></div>
-  <p class="field-help">按页汇总可能需要检查的文字。提示不代表一定有错；可定位对比、确认无误，或保留此框内原图。修改后会重新检查。</p>
+
   <div class="review-toolbar"><select id="reviewScope" aria-label="复核范围"><option value="all">全部页面</option><option value="current">当前页</option></select><span id="reviewCount"></span></div>
   <div id="reviewList"></div>
   <div class="dialog-actions"><button id="preserveReviewPage">本页待复核区域保留原图</button><button id="doneReview" class="primary">完成</button></div>
-  <p class="field-help">批量操作只处理当前页未锁定的待复核区域，可 Ctrl+Z 撤销。其他页请先定位过去。</p>
+
 </dialog>
-<dialog id="batchDialog"><div class="dialog-head"><h2>识别整个 PPT</h2><button id="closeBatch" class="icon-btn">×</button></div><p id="batchDialogSummary"></p><div class="export-options"><button id="rescanAllBtn" class="primary"><strong>重新识别全部页面</strong><span>重新识别文字并匹配字体，将替换所有页面的文字区域、样式及手动修改（包括锁定区域）。</span></button><button id="resumeBatchBtn"><strong>仅处理未完成页面</strong><span>保留已完成的页面；继续尚未识别或上次重新识别未完成的页面。</span></button></div><small>重新识别前会自动备份项目配置。中途取消时，未完成页保留原结果，可以稍后继续。</small></dialog>
+<dialog id="batchDialog"><div class="dialog-head"><h2>识别整个 PPT</h2><button id="closeBatch" class="icon-btn">×</button></div><p id="batchDialogSummary"></p><div class="export-options"><button id="rescanAllBtn" class="primary"><strong>重新识别全部页面</strong><span>替换所有识别结果及手动修改，包括锁定区域。</span></button><button id="resumeBatchBtn"><strong>仅处理未完成页面</strong><span>保留已完成页面。</span></button></div><small>重新识别前自动备份。</small></dialog>
 <dialog id="exportDialog" aria-labelledby="exportTitle">
   <div class="dialog-head"><h2 id="exportTitle">导出</h2><button id="closeExport" class="icon-btn" aria-label="关闭导出">×</button></div>
   <div class="export-body"><fieldset class="export-fieldset"><legend>页面范围</legend><div class="scope-options">
@@ -160,22 +159,22 @@
     <label><input type="radio" name="exportScope" value="all" checked><span><strong>全部页面</strong><small id="exportAllLabel"></small></span></label>
   </div></fieldset>
   <fieldset class="export-fieldset"><legend>文件格式</legend><div class="format-options">
-    <label><input type="radio" name="exportFormat" value="pptx" checked><span class="format-tag">PPTX</span><span><strong>PowerPoint</strong><small>矢量文字轮廓，附兼容预览</small></span></label>
-    <label><input type="radio" name="exportFormat" value="svg"><span class="format-tag">SVG</span><span><strong>矢量图</strong><small>保持文字轮廓，放大不模糊</small></span></label>
-    <label><input type="radio" name="exportFormat" value="png"><span class="format-tag">PNG</span><span><strong>图片</strong><small>原始分辨率，无损图片</small></span></label>
+    <label><input type="radio" title="文字以矢量轮廓导出，不能在 PowerPoint 内直接改字" name="exportFormat" value="pptx" checked><span class="format-tag">PPTX</span><span><strong>PowerPoint</strong><small>轮廓文字</small></span></label>
+    <label><input type="radio" name="exportFormat" value="svg"><span class="format-tag">SVG</span><span><strong>矢量图</strong><small>矢量轮廓</small></span></label>
+    <label><input type="radio" name="exportFormat" value="png"><span class="format-tag">PNG</span><span><strong>图片</strong><small>原始分辨率</small></span></label>
   </div></fieldset>
   <div class="export-destination">
     <label class="field" for="exportDirectory">保存文件夹</label><div class="path-row"><input id="exportDirectory" type="text" spellcheck="false" placeholder="填写完整路径或选择文件夹"><button id="browseExportDir">选择…</button></div>
     <label class="field">文件名<input id="exportFilename" type="text" spellcheck="false"></label>
-    <p class="field-help">同名文件会自动编号，不覆盖已有文件。</p>
+
   </div><p id="exportSummary" class="export-summary" aria-live="polite"></p>
-  <p class="export-note">SVG / PPTX 中的文字为轮廓，继续改字请回到本应用。旧版演示软件可能使用 PNG 兼容预览。</p>
+
   </div><p id="exportError" class="inline-error" role="alert" hidden></p><div class="dialog-actions"><button id="jsonExport" class="quiet" title="使用同一文件夹和文件名，另存全部页面的 JSON 编辑配置">备份 JSON</button><button id="cancelExport">取消</button><button id="confirmExport" class="primary">导出</button></div>
 </dialog>
 <dialog id="workspaceDialog" aria-labelledby="workspaceDialogTitle">
   <div class="dialog-head"><h2 id="workspaceDialogTitle">工作区管理</h2><button id="closeWorkspaces" class="icon-btn" aria-label="关闭工作区管理">×</button></div>
   <div id="workspaceTabs" class="segmented manager-tabs"><button data-list="active" class="active">工作区</button><button data-list="trash">回收站</button></div>
-  <div id="workspaceList" class="workspace-list"></div><p id="workspaceError" class="inline-error" role="alert" hidden></p><p class="field-help">删除后可在回收站恢复。最初导入的图片和 PPTX 文件不受影响。</p>
+  <div id="workspaceList" class="workspace-list"></div><p id="workspaceError" class="inline-error" role="alert" hidden></p>
 </dialog>
 <dialog id="folderDialog" aria-labelledby="folderTitle">
   <div class="dialog-head"><h2 id="folderTitle">选择保存文件夹</h2><button id="closeFolder" class="icon-btn" aria-label="关闭文件夹选择">×</button></div>
@@ -184,8 +183,8 @@
   <div id="folderList" class="folder-list"></div><p id="folderError" class="inline-error" role="status" hidden></p>
   <div class="dialog-actions"><button id="cancelFolder">取消</button><button id="chooseFolder" class="primary">选择此文件夹</button></div>
 </dialog>
-<dialog id="savedDialog" aria-labelledby="savedTitle"><div class="dialog-head"><h2 id="savedTitle">导出完成</h2><button id="closeSaved" class="icon-btn" aria-label="关闭导出结果">×</button></div><label class="field">已保存到<input id="savedPath" type="text" readonly></label><p class="field-help">可选中路径复制。若有同名文件，已自动添加编号。</p><div class="dialog-actions"><button id="doneSaved" class="primary">完成</button></div></dialog>
-<dialog id="helpDialog"><div class="dialog-head"><h2>使用说明</h2><button id="closeHelp" class="icon-btn">×</button></div><ol><li>左侧「页面」切换幻灯片，「本页文字」查找当前页的文字框；右侧「文字编辑」调整文字，「原图修复」处理原字擦除与背景。</li><li>导入图片，点击「识别本页」或「批量识别」。识别与拟合在本机运行。</li><li>核对识别文字；编辑后会自动更新预览。若想重新贴合原图，再点「自动匹配字体」。</li><li>调整字体、字重、字号、字距与位置；选中绿色文字框，拖动框内移动、拖动四角缩放、上方圆点旋转，文字随拖动实时变化。字号、字距自动四舍五入为整数。在空白处按住左键拖动可框选完整包含的多个文字框，拖动已选文字可整体移动，Delete 删除；Shift 点击可增减选择，点击空白取消选择。多选后右侧可批量修改字体／字重、字号、字距、笔画和颜色，不同值显示「多种」，每次批量修改可一次撤销。拖动靠近页面中心、边缘或其他文字框时，紫色参考线出现并自动吸附；按住 Alt 临时关闭，或取消「对齐吸附」。方向键可精确微调；在「原图修复」中调整擦除范围时显示橙色框。</li><li>按住「按住看原图」临时查看原图，松开返回；也可使用「滑动对比」检查。复杂图片背景可尝试「纹理局部修复」。</li><li>点击「导出」，选择页面范围和 PPTX、SVG 或 PNG 格式。选择保存文件夹与文件名；全部页面的 SVG / PNG 会按页码打包为 ZIP，同名文件自动编号。左侧「工作区 → 管理」可删除工作区，并在回收站恢复。所有修改自动保存在本机。</li><li>「集中复核」汇总拟合较弱、异常字距、文字相碰等提示。可定位对比、确认无误、保留单处原图或批量保留本页；确认后若再改动，将重新检查。「恢复多色」可处理当前页或全部页面。</li><li>Ctrl+Z 撤销，Ctrl+Shift+Z 或 Ctrl+Y 重做；也可点击顶部 ↶ / ↷。输入框编辑、移动、调整 OCR 框、删除及匹配结果均可撤销。每页保留最近 80 步，切换页面、自动保存和导出不会清空；刷新窗口后清空。</li></ol><p>支持水平、倾斜及整行旋转的单行文字；旋转角度可自动识别或手动调整。公式由独立模型检测，先完整保留原图；可识别为 LaTeX 后按二维结构重绘。同一行多色文字可从原图提取，也可选中文字手动着色；弧形、透视变形、逐字竖排、复杂艺术字与混合字体仍需拆分、校正；低置信识别默认保留原图。拟合分数用于比较候选，不是正确率。</p><p id="dataPath" class="muted"></p></dialog>
+<dialog id="savedDialog" aria-labelledby="savedTitle"><div class="dialog-head"><h2 id="savedTitle">导出完成</h2><button id="closeSaved" class="icon-btn" aria-label="关闭导出结果">×</button></div><label class="field">已保存到<input id="savedPath" type="text" readonly></label><div class="dialog-actions"><button id="doneSaved" class="primary">完成</button></div></dialog>
+<dialog id="helpDialog"><div class="dialog-head"><h2>使用说明</h2><button id="closeHelp" class="icon-btn">×</button></div><ol><li>左侧「页面」切换幻灯片，「本页文字」查找当前页的文字框；右侧「文字编辑」调整文字，「原图修复」处理原字擦除与背景。</li><li>导入图片，点击「识别本页」或「批量识别」。识别与拟合在本机运行。</li><li>核对识别文字；编辑后会自动更新预览。若想重新贴合原图，再点「自动匹配字体」。</li><li>调整字体、字重、字号、字距与位置；选中绿色文字框，拖动框内移动、拖动四角缩放、上方圆点旋转，文字随拖动实时变化。字号、字距自动四舍五入为整数。在空白处按住左键拖动可框选完整包含的多个文字框，拖动已选文字可整体移动，Delete 删除；Shift 点击可增减选择，点击空白取消选择。多选后右侧可批量修改字体／字重、字号、字距、笔画和颜色，不同值显示「多种」，每次批量修改可一次撤销。拖动靠近页面中心、边缘或其他文字框时，紫色参考线出现并自动吸附；按住 Alt 临时关闭，或取消「对齐吸附」。方向键可精确微调；在「原图修复」中调整擦除范围时显示橙色框。</li><li>按住「按住看原图」临时查看原图，松开返回；也可使用「滑动对比」检查。复杂图片背景可尝试「纹理局部修复」。</li><li>点击「导出」，选择页面范围和 PPTX、SVG 或 PNG 格式。选择保存文件夹与文件名；全部页面的 SVG / PNG 会按页码打包为 ZIP，同名文件自动编号。左侧「工作区 → 管理」可删除工作区，并在回收站恢复。所有修改自动保存在本机。SVG / PPTX 中的文字为轮廓，继续改字请回到本应用；旧版演示软件可能显示 PNG 兼容预览。</li><li>「集中复核」汇总拟合较弱、异常字距、文字相碰等提示。可定位对比、确认无误、保留单处原图或批量保留本页；确认后若再改动，将重新检查。「恢复多色」可处理当前页或全部页面。</li><li>Ctrl+Z 撤销，Ctrl+Shift+Z 或 Ctrl+Y 重做；也可点击顶部 ↶ / ↷。输入框编辑、移动、调整 OCR 框、删除及匹配结果均可撤销。每页保留最近 80 步，切换页面、自动保存和导出不会清空；刷新窗口后清空。</li></ol><p>支持水平、倾斜及整行旋转的单行文字；旋转角度可自动识别或手动调整。公式由独立模型检测，先完整保留原图；可识别为 LaTeX 后按二维结构重绘。同一行多色文字可从原图提取，也可选中文字手动着色；弧形、透视变形、逐字竖排、复杂艺术字与混合字体仍需拆分、校正；低置信识别默认保留原图。拟合分数用于比较候选，不是正确率。</p><p id="dataPath" class="muted"></p></dialog>
 <script src="/canvas-geometry.js"></script>
 <script src="/color-runs.js"></script>
 <script src="/review.js"></script>

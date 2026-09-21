@@ -102,7 +102,7 @@ function rememberJobChanges(before) {
 }
 function markDirty(geometryReady=false) {
   if(!geometryReady)liveLayers.clear();
-  dirty = true; mutation++; $('saveState').textContent = '· 尚未保存';
+  dirty = true; mutation++; $('saveState').textContent = '未保存';
   page().render_revision=-1;
   $('canvasHint').textContent = '预览待更新…';
   queuePreview();
@@ -146,13 +146,13 @@ async function flush() {
   if (saving) { await saving; if (dirty) return flush(); return; }
   if (!dirty || !project) return;
   const stamp = mutation;
-  $('saveState').textContent = '· 保存中';
+  $('saveState').textContent = '保存中…';
   saving = api('/api/save', clone(project));
   try {
     const saved = await saving;
     project.revision = saved.revision;
     if (stamp === mutation) dirty = false;
-    $('saveState').textContent = dirty ? '· 尚未保存' : '· 已保存';
+    $('saveState').textContent = dirty ? '未保存' : '已保存';
   } finally { saving = null; }
   if (dirty) return flush();
 }
@@ -179,10 +179,10 @@ function renderProject() {
   const p = page();
   $('welcome').hidden = !!p; $('editor').hidden = !p;
   $('pageTitle').textContent = p ? p.name : '未打开项目';
-  $('pageMeta').textContent = p ? `${p.width} × ${p.height} px · ${project.name}` : '导入文件或选择已有项目';
+  $('pageMeta').textContent = p ? `${p.width} × ${p.height} px · ${project.name}` : '';
   $('pageCount').textContent = project?.pages.length || 0;
   const allPages=project?.pages||[], processed=allPages.filter(p=>!p.pending_rescan&&(p.status==='review'||p.regions.length)).length;
-  $('batchSummary').textContent=allPages.length?`${processed} / ${allPages.length} 页已处理`:'导入后可批量处理全部页面';
+  $('batchSummary').textContent=allPages.length?`${processed} / ${allPages.length} 页已处理`:'';
   $('pages').replaceChildren();
   for (const item of project?.pages || []) {
     const button = document.createElement('button'); button.className = `page-card ${item.id === pageId ? 'selected' : ''}`;
@@ -200,7 +200,7 @@ function renderProject() {
     else { $('resultImage').removeAttribute('src'); mode = 'original'; }
     $('overlay').setAttribute('viewBox', `0 0 ${p.width} ${p.height}`);
     $('sheet').style.aspectRatio = `${p.width}/${p.height}`;
-    $('canvasHint').textContent = p.regions.length ? '选中绿色框：拖动框内移动，拖动四角缩放；按住看原图可对照。' : '点击「识别本页」或「批量识别」，也可框选添加文字。';
+    $('canvasHint').textContent = '';
   }
   renderRegions(); renderInspector(); setMode(mode); setBusy(busy);
   requestAnimationFrame(()=>{resize();if(page()?.regions.length)updatePreview().catch(e=>toast(e.message,true));});
@@ -247,7 +247,7 @@ function updateBatchAvailability(){
 function renderBatchStyles(){
   const regions=selectedRegions(),editable=BatchStyle.targets(regions,'font_size').length;
   const locked=regions.filter(r=>r.locked).length,preserved=regions.filter(r=>!r.locked&&!r.enabled).length;
-  $('batchScope').textContent=`修改将应用于 ${editable} 个重绘区域`+(locked?`；跳过 ${locked} 个锁定区域`:'')+(preserved?`；跳过 ${preserved} 个保留原图区域`:'')+'。';
+  $('batchScope').textContent=locked||preserved?`可编辑 ${editable}`+(locked?` · 锁定 ${locked}`:'')+(preserved?` · 保留原图 ${preserved}`:''):'';
   for(const [id,key] of batchFields){
     const state=BatchStyle.common(regions,key);$(id).value=state.count&&!state.mixed?state.value:'';
     $(id).placeholder=state.count?'多种':'无可编辑区域';
@@ -387,12 +387,9 @@ $('sourceSection').addEventListener('toggle',()=>{
 $('editBoxBtn').onclick=()=>{editingBox=!editingBox;drawing=false;$('drawBtn').classList.remove('primary');document.body.classList.remove('drawing-mode');updateBoxButton();$('boxesChk').checked=true;drawOverlay();updateCanvasHint();};
 
 function updateCanvasHint() {
-  $('canvasHint').textContent=peeking?'正在查看原图 · 松开按钮返回':editingBox?'橙色框只修改原字擦除范围；绿色框用于移动和缩放重绘文字。':
-    mode==='original'?'正在查看原图 · 切换「重绘」后可拖动文字框编辑。':
-    region()?.locked?'此区域已锁定 · 取消「锁定样式」后可拖动。':
-    region()&&!region().enabled?'此区域保留原图 · 开启「重绘此区域」后可编辑。':
-    selection().length>1?`已选中 ${selection().length} 个区域 · 拖动整体移动，Delete 删除，点击空白取消选择。`:'空白处拖动框选，点击空白取消选择；框内移动、四角缩放、圆点旋转。';
+  $('canvasHint').textContent='';
 }
+
 function installLiveResult(svg) {
   const root=new DOMParser().parseFromString(svg,'image/svg+xml').documentElement;
   if(root.localName!=='svg')throw new Error('预览格式无效');
@@ -627,11 +624,10 @@ async function watchJob(id, before=null) {
       renderInspector();renderRegions();setMode(keepMode==='compare'?'compare':'result');
       if(job.status==='error')throw new Error(job.message);
       if(job.status==='cancelled'){toast(job.message);return;}
-      $('saveState').textContent='· 已保存';
+      $('saveState').textContent='已保存';
       if(job.download)download(job.download);
       if(job.saved_path){$('savedPath').value=job.saved_path;$('exportDirectory').value=job.saved_path.slice(0,job.saved_path.lastIndexOf('/'))||'/';$('savedDialog').showModal();}
-      if(job.kind==='analyze_all')$('batchSummary').textContent=job.message;
-      toast(['analyze_all','export','colors'].includes(job.kind)?job.message:job.warnings?.length?job.warnings.slice(0,2).join('；'):'已完成，可切换滑动对比检查效果。');
+      toast(['analyze_all','export','colors'].includes(job.kind)?job.message:job.warnings?.length?job.warnings.slice(0,2).join('；'):'已完成');
       return;
     }
     await new Promise(resolve=>setTimeout(resolve,450));
@@ -648,13 +644,13 @@ async function upload(files){
       const data=await response.json();if(!response.ok)throw new Error(data.error);
       const oldCount=pid&&project?project.pages.length:0;project=data;pid=data.id;firstNew??=data.pages[oldCount]?.id;
     }
-    await refreshProjects();await loadProject(pid,firstNew);toast('导入完成。点击「识别本页」或「批量识别」开始。');
+    await refreshProjects();await loadProject(pid,firstNew);toast('导入完成');
   }finally{setBusy(false);$('fileInput').value='';}
 }
 $('fileInput').onchange=safeRun(()=>upload([...$('fileInput').files]));
 for(const id of ['importBtn','welcomeImport'])$(id).onclick=()=>{newImport=false;$('fileInput').click();};
 $('newBtn').onclick=()=>{newImport=true;$('fileInput').click();};
-$('demoBtn').onclick=safeRun(async()=>{if(busy)return;await flush();setBusy(true);try{project=await api('/api/demo',{});await refreshProjects();await loadProject(project.id);toast('已加载测试示例，点击「识别本页」或「批量识别」开始。');}finally{setBusy(false);}});
+$('demoBtn').onclick=safeRun(async()=>{if(busy)return;await flush();setBusy(true);try{project=await api('/api/demo',{});await refreshProjects();await loadProject(project.id);toast('示例已加载');}finally{setBusy(false);}});
 $('projectSelect').onchange=safeRun(async()=>{const id=$('projectSelect').value;if(!id||busy)return;await flush();await loadProject(id);});
 $('analyzeBtn').onclick=safeRun(async()=>{const reset=!!page()?.regions.length;if(reset&&!confirm('重新识别将替换本页现有文字区域和手动修改。是否继续？'))return;await runJob('analyze',{reset});});
 $('analyzeAllBtn').onclick=()=>{
@@ -671,7 +667,7 @@ $('fitBtn').onclick=safeRun(async()=>{const r=region();if(r?.locked)throw new Er
 $('fitFontBtn').onclick=safeRun(async()=>{const r=region();if(!r||r.locked||!r.enabled)throw new Error('请启用此区域并取消锁定。');await runJob('fit',{region_id:selectedId,font_ids:[r.font_id]});});
 $('previewBtn').onclick=safeRun(()=>{previewAutoShow=true;return updatePreview();});
 $('cancelBtn').onclick=safeRun(async()=>{await api('/api/cancel',{});$('jobMessage').textContent='正在取消，请等待当前步骤结束…';});
-$('drawBtn').onclick=()=>{drawing=!drawing;editingBox=false;updateBoxButton();document.body.classList.toggle('drawing-mode',drawing);$('drawBtn').classList.toggle('primary',drawing);if(drawing){setMode('original');$('canvasHint').textContent='在原图上拖出一个单行文字框，然后输入正确文字。';}};
+$('drawBtn').onclick=()=>{drawing=!drawing;editingBox=false;updateBoxButton();document.body.classList.toggle('drawing-mode',drawing);$('drawBtn').classList.toggle('primary',drawing);if(drawing){setMode('original');updateCanvasHint();}};
 $('selectBtn').onclick=()=>{if(busy)return;cancelCanvasPointer();drawing=false;editingBox=false;document.body.classList.remove('drawing-mode');$('drawBtn').classList.remove('primary');showPanel('inspector','textEditPanel');updateBoxButton();drawOverlay();updateCanvasHint();};
 $('boxesChk').onchange=drawOverlay;$('zoom').onchange=resize;$('sourceImage').onload=resize;
 new ResizeObserver(resize).observe($('viewport'));
@@ -748,7 +744,7 @@ async function loadFolders(path) {
       const button=document.createElement('button');button.textContent=name;
       button.onclick=()=>loadFolders(result.path.replace(/\/$/,'')+'/'+name);$('folderList').append(button);
     }
-    if(!result.folders.length){const empty=document.createElement('p');empty.className='workspace-empty';empty.textContent='此处没有子文件夹，可直接选择当前文件夹。';$('folderList').append(empty);}
+    if(!result.folders.length){const empty=document.createElement('p');empty.className='workspace-empty';empty.textContent='无子文件夹';$('folderList').append(empty);}
     $('chooseFolder').disabled=false;return true;
   }catch(e){if(request===folderRequest){$('folderError').textContent=e.message;$('folderError').hidden=false;}return false;}
   finally{if(request===folderRequest)for(const id of ['folderHome','folderUp','folderGo'])$(id).disabled=false;}
@@ -764,7 +760,7 @@ $('chooseFolder').onclick=async()=>{if(await loadFolders($('folderPath').value))
 function clearProject() {
   clearTimeout(saveTimer);resetPreview();dirty=false;project=null;pageId=null;selectedId=null;
   pageHistories.clear();undo=[];redo=[];historyProjectId=null;localStorage.removeItem('sharpener-project');
-  $('saveState').textContent='· 准备就绪';renderProject();
+  $('saveState').textContent='';renderProject();
 }
 function renderWorkspaceList() {
   $('workspaceList').replaceChildren();
@@ -842,7 +838,7 @@ function renderReviewSummary(){
 function renderReviewActions(){
   const r=region();if(!r)return;
   const hints=RegionReview.reasons(page(),r),pending=RegionReview.pending(page(),r);
-  $('regionReviewHint').textContent=!r.enabled?'已保留原图；开启「重绘此区域」可恢复。':pending?hints.join(' · '):r.reviewed_signature===RegionReview.signature(page(),r)?'已确认；更改后会重新检查。':'';
+  $('regionReviewHint').textContent=r.enabled&&pending?hints.join(' · '):'';
   $('preserveBtn').disabled=busy||!r.enabled||!!r.locked;
   $('preserveBtn').title=r.locked?'请先取消锁定样式':'';
   $('acceptRegionBtn').disabled=busy||!pending;
@@ -880,7 +876,7 @@ function renderReviewList(){
     }
     card.append(title,hint,actions);$('reviewList').append(card);
   }
-  if(!items.length){const empty=document.createElement('p');empty.className='workspace-empty';empty.textContent='没有待复核提示。仍可按需对照原图检查。';$('reviewList').append(empty);}
+  if(!items.length){const empty=document.createElement('p');empty.className='workspace-empty';empty.textContent='暂无待复核区域';$('reviewList').append(empty);}
   const current=all.filter(item=>item.page.id===pageId&&!item.region.locked);
   $('preserveReviewPage').disabled=busy||!current.length;
   $('preserveReviewPage').textContent=`本页 ${current.length} 处保留原图`;

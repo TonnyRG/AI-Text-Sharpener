@@ -88,3 +88,7 @@ button:focus-visible,summary:focus-visible{outline:2px solid #438d70;outline-off
 .batch-color{display:flex;align-items:center;gap:8px;margin-top:6px}.batch-color input[type=color]{flex:none;width:34px;height:30px;padding:0;border:0;background:none}
 .batch-color input[type=text]{font:12px ui-monospace,monospace}.batch-color .mixed-color{opacity:.5}
 body.busy #multiSelection{pointer-events:none;opacity:.65}
+
+/* Keep routine guidance in tooltips/help, reserving inline text for state. */
+.topbar #helpBtn{margin-left:auto}
+.canvas-foot #canvasHint:empty,#batchScope:empty,#regionReviewHint:empty,.library-foot:has(#saveState:empty){display:none}
