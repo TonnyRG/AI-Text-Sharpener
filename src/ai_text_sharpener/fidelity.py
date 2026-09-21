@@ -15,7 +15,62 @@ from .typography import candidate_fonts, family_weight_fonts, font_catalog, outl
 from .geometry import round_style, rotated_bounds, source_frame, source_position
 
 
-def crop_evidence(image: np.ndarray, bbox: list[float]):
+def _single_line_mask(binary):
+    """Discard small, detached fragments clipped by the top/bottom crop edge.
+
+    OCR line boxes can include the descenders of the preceding line. Keep
+    interior islands (accents, i-dots and punctuation), and require a generous
+    gap before removing an edge band. This is deliberately not a general
+    largest-component filter: Chinese glyphs often have disconnected strokes.
+    """
+    rows = np.flatnonzero(binary.any(axis=1))
+    if not len(rows):
+        return binary
+    bands = np.split(rows, np.flatnonzero(np.diff(rows) > 1) + 1)
+    main = max(bands, key=lambda band: np.count_nonzero(binary[band]))
+    mass = np.count_nonzero(binary[main])
+    height = len(main)
+    clean = binary.copy()
+    for band in bands:
+        if band[0] > 1 and band[-1] < len(binary) - 2:
+            continue
+        gap = max(main[0] - band[-1] - 1, band[0] - main[-1] - 1)
+        if (len(band) < height * .35 and gap >= max(3, height * .18)
+                and np.count_nonzero(binary[band]) < mass * .15):
+            clean[band] = 0
+    return clean
+
+
+def _single_glyph_mask(binary):
+    """Exclude disconnected corner background around a digit in a round badge.
+
+    Only peripheral components separated from an interior glyph are eligible;
+    never discard arbitrary small components such as dots or Chinese strokes.
+    """
+    count, labels, stats, centers = cv2.connectedComponentsWithStats(binary, 8)
+    height, width = binary.shape
+    def at_edge(s):
+        x, y, w, h, _ = s
+        return x <= 1 or y <= 1 or x+w >= width-1 or y+h >= height-1
+    interior = [i for i in range(1, count) if not at_edge(stats[i])
+                and width*.2 < centers[i][0] < width*.8
+                and height*.2 < centers[i][1] < height*.8]
+    if not interior:
+        return binary
+    main = max(interior, key=lambda i: stats[i, cv2.CC_STAT_AREA])
+    mx, my, mw, mh, area = stats[main]
+    clean = binary.copy()
+    for i in range(1, count):
+        x, y, w, h, a = stats[i]
+        cx, _ = centers[i]
+        separated = (max(mx-cx, cx-mx-mw) > max(2, mw*.1)
+                     or max(my-y-h, y-my-mh) > max(3, mh*.18))
+        if at_edge(stats[i]) and a < area and separated:
+            clean[labels == i] = 0
+    return clean
+
+
+def crop_evidence(image: np.ndarray, bbox: list[float], *, single_line=False, single_glyph=False):
     height, width = image.shape[:2]
     x, y, w, h = bbox
     x0, y0 = max(0, int(x)), max(0, int(y))
@@ -28,11 +83,15 @@ def crop_evidence(image: np.ndarray, bbox: list[float]):
     ring = (xx < 2) | (xx >= pw - 2) | (yy < 2) | (yy >= ph - 2)
     design = np.stack([np.ones_like(xx), xx / max(1, pw), yy / max(1, ph)], -1).astype(np.float32)
     # Robust plane fit preserves a simple gradient instead of flattening it.
-    samples = patch[ring]
+    # A single digit's crop can straddle a circular badge: the outer ring then
+    # samples the page, not the digit's actual background. Use the dominant
+    # crop color for these small regions, with a stricter outlier rejection.
+    samples = patch.reshape(-1, 3) if single_glyph else patch[ring]
+    sample_design = design.reshape(-1, 3) if single_glyph else design[ring]
     med = np.median(samples, axis=0)
     distances = np.linalg.norm(samples - med, axis=1)
-    keep = distances <= max(15, float(np.percentile(distances, 85)))
-    coeff = np.linalg.lstsq(design[ring][keep], samples[keep], rcond=None)[0]
+    keep = distances <= max(15, float(np.percentile(distances, 50 if single_glyph else 85)))
+    coeff = np.linalg.lstsq(sample_design[keep], samples[keep], rcond=None)[0]
     background = np.clip(design @ coeff, 0, 255)
     residual = np.linalg.norm(patch - background, axis=2)
     strength = float(np.percentile(residual, 99))
@@ -46,6 +105,10 @@ def crop_evidence(image: np.ndarray, bbox: list[float]):
     for label in range(1, count):
         if stats[label, cv2.CC_STAT_AREA] >= max(2, ph * pw * 0.000015):
             clean[labels == label] = 255
+    if single_line:
+        clean = _single_line_mask(clean)
+    if single_glyph:
+        clean = _single_glyph_mask(clean)
     points = cv2.findNonZero(clean)
     if points is None:
         raise ValueError("未找到稳定的文字笔画，请手动画框。")
@@ -72,12 +135,37 @@ def _match(target: np.ndarray, candidate: np.ndarray):
 
 
 def fit_region(image: np.ndarray, region: dict, font_ids=None, progress=None) -> dict:
+    """Verify isolated-character orientation instead of trusting its OCR box."""
+    angle = float(region.get("source_rotation", 0))
+    if len(region["text"].strip()) != 1 or abs(angle) < .01:
+        return _fit_at_angle(image, region, font_ids, progress)
+    # A narrow upright digit can acquire either a small tilt or a quarter-turn
+    # from OCR. Compare the original angle with upright, retaining real rotated
+    # glyphs when their image fit is materially better.
+    results = []
+    for candidate_angle in (0, angle):
+        candidate = dict(region, source_rotation=candidate_angle)
+        try:
+            results.append(_fit_at_angle(image, candidate, font_ids, progress))
+        except ValueError:
+            continue
+    if not results:
+        raise ValueError("单字拟合失败，请调整原字范围。")
+    upright = next((r for r in results if not r["source_rotation"]), None)
+    best = max(results, key=lambda r: r["score"])
+    if upright is not None and upright["score"] >= best["score"] - .015:
+        best = upright
+    best["ocr_rotation"] = region.get("ocr_rotation", angle)
+    return best
+
+
+def _fit_at_angle(image: np.ndarray, region: dict, font_ids=None, progress=None) -> dict:
     result = deepcopy(region)
     text = region["text"].strip()
     if not text:
         raise ValueError("请先输入正确的文字。")
     frame, source_box, transform = source_frame(image, region)
-    evidence = crop_evidence(frame, source_box)
+    evidence = crop_evidence(frame, source_box, single_line=True, single_glyph=len(text) == 1)
     ix, iy, iw, ih = evidence["ink_box"]
     ids = font_ids or candidate_fonts(text)
     ids = [fid for fid in ids if fid in font_catalog() and supports(fid, text)]
@@ -88,6 +176,7 @@ def fit_region(image: np.ndarray, region: dict, font_ids=None, progress=None) ->
     pad = max(5, int(ih * .22))
     source = np.pad(evidence["mask"], pad)
     target = cv2.resize(source, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    target_ink = float(target.sum())
     candidates = []
     stroke_width = float(region.get("stroke_width", 0))
     # After coarse family selection, evaluate ALL weights of the strongest
@@ -110,6 +199,12 @@ def fit_region(image: np.ndarray, region: dict, font_ids=None, progress=None) ->
                 size, spacing = round_style(size), round_style(spacing)
                 mask, _ = render_mask(fid, text, size * scale, spacing * scale, stroke_width * scale)
                 score, (dx, dy) = _match(target, mask)
+                # Overlap alone can prefer a smaller bold face over a regular
+                # face with slightly different glyph proportions. Compare soft
+                # ink coverage too, symmetrically penalizing heavier AND lighter
+                # strokes; no hard-coded preference for Regular or thin fonts.
+                ink_error = abs(math.log(max(float(mask.sum()), 1e-6) / max(target_ink, 1e-6)))
+                score = max(0.0, score - .18 * min(ink_error, 1.0))
                 layout = outline_layout(fid, text, size, spacing, stroke_width)
                 item = {"font_id": fid, "font_label": font_catalog()[fid]["label"],
                         "font_size": round(size, 2), "letter_spacing": round(spacing, 2), "stroke_width": stroke_width,
@@ -177,7 +272,9 @@ def erase_regions(image: np.ndarray, regions: list[dict]) -> np.ndarray:
             continue
         try:
             frame, source_box, transform = source_frame(image, region)
-            ev = crop_evidence(frame, source_box)
+            ordinary = region.get("kind") != "formula"
+            ev = crop_evidence(frame, source_box, single_line=ordinary,
+                               single_glyph=ordinary and len(region.get("original_text", region.get("text", "")).strip()) == 1)
         except ValueError:
             continue
         ph, pw = ev["patch"].shape[:2]
