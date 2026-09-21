@@ -14,6 +14,10 @@ After each completed change to this project:
   fixtures may be committed.
 - Report the commit and whether the push succeeded. If authentication or network
   access prevents pushing, retain the local commit and state the blocker.
+- After pushing, check GitHub Actions for that exact commit and wait for the
+  Python matrix to finish. Report local tests, push, and remote CI separately;
+  do not treat a successful push as passing CI. If CI fails, investigate and
+  fix it; if its status cannot be retrieved, state that it is unverified.
 
 This is standing authorization; do not ask for routine commit/push confirmation.
 Do not create a recurring scheduler or background watcher for this workflow.

@@ -11,6 +11,7 @@ dist/
 # Test / coverage
 .pytest_cache/
 .coverage
+test-results.xml
 htmlcov/
 tests/fixtures/output/
 
