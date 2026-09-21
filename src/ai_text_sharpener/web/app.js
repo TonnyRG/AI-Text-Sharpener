@@ -70,7 +70,7 @@ function setBusy(value) {
   for(const button of $('workspaceList').querySelectorAll('button'))button.disabled=value;
   renderReviewActions();for(const id of ['recoverColorBtn','singleColorBtn','applySelectionColor'])$(id).disabled=value||!!region()?.locked; if($('reviewDialog').open)renderReviewList();
   $('undoBtn').disabled = value || !undo.length; $('redoBtn').disabled = value || !redo.length;
-  $('selectBtn').disabled=value||!page();$('deleteSelected').disabled=value||!selectedRegions().some(r=>!r.locked);
+  $('selectBtn').disabled=value||!page();$('deleteSelected').disabled=value||!selectedRegions().some(r=>!r.locked);updateBatchAvailability();
 }
 function bindHistory() {
   if(historyProjectId!==project?.id){pageHistories.clear();historyProjectId=project?.id;}
@@ -232,6 +232,61 @@ function fontOptions() {
   for(const f of fonts) if(f.id===selected||f.label.toLowerCase().includes(filter)) $('fontField').add(new Option(f.label,f.id));
   $('fontField').value=selected||'';
 }
+const batchFields=[['batchSizeField','font_size'],['batchSpacingField','letter_spacing'],['batchStrokeField','stroke_width']];
+function batchFontOptions(){
+  const state=BatchStyle.common(selectedRegions(),'font_id'),filter=$('batchFontSearch').value.toLowerCase();
+  const field=$('batchFontField');field.replaceChildren(new Option(state.mixed?'多种字体':state.count?'选择字体':'无可编辑的普通文字',''));
+  for(const f of fonts)if((!state.mixed&&f.id===state.value)||f.label.toLowerCase().includes(filter))field.add(new Option(f.label,f.id));
+  field.value=state.mixed?'':state.value||'';
+}
+function updateBatchAvailability(){
+  const regions=selectedRegions();
+  for(const [id,key] of [...batchFields,['batchFontField','font_id'],['batchFontSearch','font_id'],['batchColorField','color'],['batchColorText','color']])
+    $(id).disabled=busy||!BatchStyle.targets(regions,key).length;
+}
+function renderBatchStyles(){
+  const regions=selectedRegions(),editable=BatchStyle.targets(regions,'font_size').length;
+  const locked=regions.filter(r=>r.locked).length,preserved=regions.filter(r=>!r.locked&&!r.enabled).length;
+  $('batchScope').textContent=`修改将应用于 ${editable} 个重绘区域`+(locked?`；跳过 ${locked} 个锁定区域`:'')+(preserved?`；跳过 ${preserved} 个保留原图区域`:'')+'。';
+  for(const [id,key] of batchFields){
+    const state=BatchStyle.common(regions,key);$(id).value=state.count&&!state.mixed?state.value:'';
+    $(id).placeholder=state.count?'多种':'无可编辑区域';
+  }
+  const color=BatchStyle.common(regions,'color');
+  $('batchColorField').value=color.count&&!color.mixed?color.value:'#182029';
+  $('batchColorField').classList.toggle('mixed-color',color.mixed);
+  $('batchColorText').value=color.count&&!color.mixed?color.value:'';
+  $('batchColorText').placeholder=color.count?'多种颜色':'无可编辑区域';
+  batchFontOptions();updateBatchAvailability();
+}
+async function applyBatchStyle(key,raw,group){
+  if(busy||selection().length<2)return;
+  const regions=selectedRegions(),font=key==='font_id'?fonts.find(f=>f.id===raw):null;
+  const result=BatchStyle.plan(regions,key,raw,font);
+  if(!result.changes.length){renderBatchStyles();return;}
+  if(key==='font_id'){
+    // Validate the whole batch before altering any region (e.g. missing CJK glyphs).
+    setBusy(true);
+    try{
+      const candidate=clone(page().regions);
+      for(const {id,patch} of result.changes)Object.assign(candidate.find(r=>r.id===id),patch);
+      await api('/api/preview',{project_id:project.id,page_id:pageId,regions:candidate});
+    }catch(e){renderBatchStyles();throw e;}finally{setBusy(false);}
+  }
+  history(group);
+  for(const {id,patch} of result.changes)Object.assign(page().regions.find(r=>r.id===id),patch);
+  markDirty();renderRegions();renderBatchStyles();
+}
+for(const [id,key] of batchFields)$(id).addEventListener('input',safeRun(async()=>{
+  const field=$(id);if(field.value===''||field.validity.badInput||field.validity.rangeUnderflow||field.validity.rangeOverflow)return;
+  await applyBatchStyle(key,field.value,id);
+}));
+$('batchFontSearch').oninput=batchFontOptions;
+$('batchFontField').onchange=safeRun(async()=>{if($('batchFontField').value)await applyBatchStyle('font_id',$('batchFontField').value,null);});
+$('batchColorField').oninput=safeRun(()=>applyBatchStyle('color',$('batchColorField').value,'batchColor'));
+$('batchColorText').oninput=safeRun(()=>{const color=$('batchColorText').value.trim();if(/^#[0-9a-f]{6}$/i.test(color))return applyBatchStyle('color',color,'batchColor');});
+$('batchColorText').onchange=safeRun(()=>{const color=$('batchColorText').value.trim();if(color)return applyBatchStyle('color',color,'batchColor');});
+$('batchColorText').onkeydown=e=>{if(e.key==='Enter')e.currentTarget.blur();};
 function renderGeometryFields(r) {
   const rounded=v=>Math.round(v*1000)/1000;
   for(const [id,key] of [['sizeField','font_size'],['spacingField','letter_spacing'],['strokeField','stroke_width'],['xField','x'],['yField','y'],['rotationField','rotation'],['sourceRotationField','source_rotation']])
@@ -242,7 +297,8 @@ function renderInspector() {
   $('noSelection').hidden=!!r;$('properties').hidden=!r||count>1;
   $('multiSelection').hidden=count<2;$('selectionCount').textContent=`已选中 ${count} 个文字区域`;
   $('deleteSelected').disabled=busy||!selectedRegions().some(r=>!r.locked);
-  if(!r||count>1)return;
+  if(count>1){renderBatchStyles();return;}
+  if(!r)return;
   const math=r.kind==='formula';$('kindField').value=math?'formula':'text';$('formulaPanel').hidden=!math;$('plainTextLabel').hidden=math;
   $('latexField').value=r.latex||'';
   for(const id of ['fontControls','fontMatchActions'])$(id).hidden=math;
@@ -749,7 +805,7 @@ document.addEventListener('keydown',e=>{
   if(!command||e.altKey||e.isComposing||!['z','y'].includes(key))return;
   const target=e.target;
   if((target.closest?.('dialog')&&!target.closest?.('#reviewDialog'))||(['INPUT','TEXTAREA','SELECT'].includes(target.tagName)&&
-     (!target.closest('#properties')||target.id==='fontSearch')))return;
+     (!target.closest('#properties, #multiSelection')||['fontSearch','batchFontSearch'].includes(target.id))))return;
   if(!page())return;
   e.preventDefault();undoRedo(key==='y'||e.shiftKey);
 });
