@@ -323,8 +323,8 @@ function renderInspector() {
   }
 }
 function renderFitStatus(r) {
-  const pending=RegionReview.pending(page(),r),accepted=r.reviewed_signature===RegionReview.signature(page(),r);
-  $('fitBadge').textContent=!r.enabled?'保留原图':accepted?'已确认':pending?'建议复核':r.locked?'已锁定':r.fit_status==='edited'?'已手动调整':r.kind==='formula'?'公式待复核':r.score==null?'待匹配':r.score<.65?'建议复核':'已匹配';
+  const pending=RegionReview.pending(page(),r);
+  $('fitBadge').textContent=!r.enabled?'保留原图':pending?'建议复核':r.locked?'已锁定':r.fit_status==='edited'?'已手动调整':r.kind==='formula'?'公式待复核':r.score==null?'待匹配':r.score<.65?'建议复核':'已匹配';
   $('fitBadge').classList.toggle('warning',pending);
   $('scoreText').textContent=r.score==null?'':`相似度 ${(r.score*100).toFixed(1)}`;
 }
@@ -410,11 +410,8 @@ function showCanvasLayers() {
   $('liveResult').hidden=original||!$('liveResult').firstChild;
   $('resultImage').hidden=original||!!$('liveResult').firstChild;
   $('overlay').hidden=peeking;
-  $('compareLine').hidden=peeking||mode!=='compare';
-  $('compareControl').hidden=mode!=='compare';
   $('peekBtn').classList.toggle('active',peeking);
   $('peekBtn').textContent=peeking?'松开返回重绘':'按住看原图';
-  compare();
 }
 function peekOriginal(value) {
   if(!page()||pointer)return;
@@ -506,11 +503,6 @@ function setMode(next) {
   mode=next;
   for(const b of $('viewModes').children)b.classList.toggle('active',b.dataset.mode===mode);
   showCanvasLayers();drawOverlay();updateCanvasHint();updateCanvasTools();
-}
-function compare() {
-  const value=Number($('compareRange').value);
-  for(const id of ['resultImage','liveResult'])$(id).style.clipPath=mode==='compare'?`inset(0 0 0 ${value}%)`:'';
-  $('compareLine').style.left=`${value}%`;
 }
 function position(evt) {const b=$('sheet').getBoundingClientRect();const p=page();return{x:(evt.clientX-b.left)*p.width/b.width,y:(evt.clientY-b.top)*p.height/b.height};}
 $('viewport').addEventListener('pointerdown',evt=>{
@@ -635,11 +627,11 @@ async function watchJob(id, before=null) {
     $('jobMessage').textContent=job.message;$('progress').value=job.progress||0;
     if(!job.active){
       $('jobBar').hidden=true;setBusy(false);
-      const selected=selectedId, keepMode=mode;
+      const selected=selectedId;
       await loadProject(job.project_id,job.page_id||pageId);
       if(before)rememberJobChanges(before);
       selectedId=page()?.regions.some(r=>r.id===selected)?selected:page()?.regions[0]?.id;
-      renderInspector();renderRegions();setMode(keepMode==='compare'?'compare':'result');
+      renderInspector();renderRegions();setMode('result');
       if(job.status==='error')throw new Error(job.message);
       if(job.status==='cancelled'){toast(job.message);return;}
       $('saveState').textContent='已保存';
@@ -690,7 +682,6 @@ $('selectBtn').onclick=()=>{if(busy)return;cancelCanvasPointer();drawing=false;e
 $('boxesChk').onchange=drawOverlay;$('zoom').onchange=resize;$('sourceImage').onload=resize;
 new ResizeObserver(resize).observe($('viewport'));
 for(const b of $('viewModes').children)b.onclick=safeRun(async()=>{previewAutoShow=false;if(b.dataset.mode!=='original'&&!previewUrl)await updatePreview();setMode(b.dataset.mode);});
-$('compareRange').oninput=compare;
 function deleteSelection(){
   const ids=selectedRegions().filter(r=>!r.locked).map(r=>r.id);if(!ids.length||busy)return;
   history();page().regions=page().regions.filter(r=>!ids.includes(r.id));markDirty();setSelection([]);
@@ -859,19 +850,18 @@ function renderReviewActions(){
   $('regionReviewHint').textContent=pending?hints.join(' · '):'';
   $('preserveBtn').disabled=busy||(!r.enabled&&!pending)||!!r.locked;
   $('preserveBtn').title=r.locked?'请先取消锁定样式':'';
-  $('acceptRegionBtn').disabled=busy||!pending;
 }
-function reviewAction(id,action){
-  const r=page()?.regions.find(r=>r.id===id);if(!r||busy||action==='preserve'&&r.locked)return;
-  history();if(action==='preserve')RegionReview.preserve(r);else r.reviewed_signature=RegionReview.signature(page(),r);
+function preserveRegion(id){
+  const r=page()?.regions.find(r=>r.id===id);if(!r||busy||r.locked)return;
+  history();RegionReview.preserve(r);
   markDirty();renderRegions();renderInspector();setBusy(busy);
 }
 async function locateReview(pid,rid){
   if(busy)return;await flush();$('reviewDialog').close();
-  if(pageId!==pid){resetPreview();pageId=pid;selectedId=rid;bindHistory();mode='compare';renderProject();}
+  if(pageId!==pid){resetPreview();pageId=pid;selectedId=rid;bindHistory();mode='result';renderProject();}
   else select(rid);
   showPanel('library','regionsPanel');showPanel('inspector','textEditPanel');
-  $('boxesChk').checked=true;previewAutoShow=false;await updatePreview();setMode('compare');
+  $('boxesChk').checked=true;previewAutoShow=false;await updatePreview();setMode('result');
   const box=$('overlay').querySelector(`[data-id="${CSS.escape(rid)}"]`);box?.scrollIntoView({block:'center',inline:'center'});
 }
 function renderReviewList(){
@@ -883,13 +873,13 @@ function renderReviewList(){
     const title=document.createElement('strong');title.textContent=`第 ${item.pageIndex+1} 页 · ${item.region.text||item.region.latex||'公式'}`;
     const hint=document.createElement('p');hint.textContent=item.reasons.join(' · ');
     const actions=document.createElement('div');actions.className='review-actions';
-    for(const [label,action] of [['定位对比','locate'],['保留原图','preserve'],['确认无误','accept']]){
+    for(const [label,action] of [['定位文字','locate'],['保留原图','preserve']]){
       const button=document.createElement('button');button.textContent=label;button.disabled=busy||(action==='preserve'&&!!item.region.locked);
       button.onclick=safeRun(async()=>{
         if(action==='locate'){await locateReview(item.page.id,item.region.id);return;}
         // Keep history page-local, including actions performed from the queue.
         if(item.page.id!==pageId){await locateReview(item.page.id,item.region.id);$('reviewDialog').showModal();}
-        reviewAction(item.region.id,action);
+        preserveRegion(item.region.id);
       });actions.append(button);
     }
     card.append(title,hint,actions);$('reviewList').append(card);
@@ -902,8 +892,7 @@ function renderReviewList(){
 $('reviewBtn').onclick=()=>{if(busy||!project)return;renderReviewList();$('reviewDialog').showModal();};
 $('reviewScope').onchange=renderReviewList;
 for(const id of ['closeReview','doneReview'])$(id).onclick=()=>$('reviewDialog').close();
-$('preserveBtn').onclick=()=>reviewAction(selectedId,'preserve');
-$('acceptRegionBtn').onclick=()=>reviewAction(selectedId,'accept');
+$('preserveBtn').onclick=()=>preserveRegion(selectedId);
 $('preserveReviewPage').onclick=()=>{
   if(busy||!page())return;const selected=page().regions.filter(r=>!r.locked&&RegionReview.pending(page(),r));if(!selected.length)return;
   history();selected.forEach(RegionReview.preserve);markDirty();renderRegions();renderInspector();toast(`本页 ${selected.length} 处已保留原图，可撤销。`);

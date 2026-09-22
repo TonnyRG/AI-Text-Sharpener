@@ -27,6 +27,8 @@
     return hints;
   }
   function signature(page,r){
+    // Read-only compatibility with acknowledgments saved by older versions.
+    // The UI no longer creates acknowledgments.
     const keys=['text','latex','kind','font_id','font_label','font_size','letter_spacing','stroke_width','color','color_runs','color_text','color_mode','x','y','bbox','enabled','erase_mode','score','confidence'];
     if(r.rotation||r.source_rotation||r.source_quad)keys.push('rotation','source_rotation','source_quad');
     // Derived ink sizes are omitted: preview refreshes must not undo acceptance.

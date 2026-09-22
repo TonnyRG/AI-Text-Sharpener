@@ -39,12 +39,11 @@
     <div id="editor" class="editor" hidden>
       <div class="viewbar">
         <div class="canvas-tools" role="group" aria-label="画布编辑工具"><button id="selectBtn" class="active" aria-pressed="true" title="空白处拖动框选；框内移动、四角缩放、圆点旋转；点击空白取消选择">选择 / 移动</button><button id="drawBtn" aria-pressed="false" title="在原图上框选要重绘的文字">＋ 添加文字</button></div>
-        <div class="view-tools"><div class="segmented" id="viewModes" role="group" aria-label="画布视图"><button data-mode="original" class="active">原图</button><button data-mode="result">重绘</button><button data-mode="compare">滑动对比</button></div><button id="peekBtn" title="按住查看原图，松开返回；也可用键盘空格或回车" disabled>按住看原图</button></div>
+        <div class="view-tools"><div class="segmented" id="viewModes" role="group" aria-label="画布视图"><button data-mode="original" class="active">原图</button><button data-mode="result">重绘</button></div><button id="peekBtn" title="按住查看原图，松开返回；也可用键盘空格或回车" disabled>按住看原图</button></div>
       </div>
-      <div id="viewport" class="viewport"><div id="sheet" class="sheet"><img id="sourceImage" alt="原始图片" draggable="false"><img id="resultImage" alt="文字重绘结果" draggable="false" hidden><div id="liveResult" aria-label="实时重绘结果" hidden></div><div id="compareLine" hidden><span>◀ ▶</span></div><svg id="overlay" aria-label="文字区域画布"></svg></div></div>
+      <div id="viewport" class="viewport"><div id="sheet" class="sheet"><img id="sourceImage" alt="原始图片" draggable="false"><img id="resultImage" alt="文字重绘结果" draggable="false" hidden><div id="liveResult" aria-label="实时重绘结果" hidden></div><svg id="overlay" aria-label="文字区域画布"></svg></div></div>
       <div class="canvas-foot">
         <div class="canvas-display" role="group" aria-label="画布显示设置"><label><input type="checkbox" id="boxesChk" checked> 文字框</label><label title="移动对齐页面或文字框；旋转吸附常用角度及其他文字角度；按住 Alt 临时关闭"><input type="checkbox" id="snapChk" checked> 对齐吸附</label></div>
-        <label id="compareControl" hidden>原图 <input type="range" id="compareRange" min="0" max="100" value="50" aria-label="原图与重绘对比比例">重绘</label>
         <div class="canvas-zoom"><select id="zoom" aria-label="缩放"><option value="fit">适应窗口</option><option value="1">100%</option><option value="2">200%</option></select><button id="previewBtn" title="编辑后自动更新；也可手动刷新，快捷键 Ctrl+Enter">刷新预览</button></div>
         <span id="canvasHint" role="status"></span>
       </div>
@@ -78,7 +77,7 @@
       <div class="region-summary">
         <div class="region-head"><strong id="regionName">区域</strong><span id="fitBadge" class="badge">待匹配</span></div>
         <div class="toggle-row"><label><input id="enabledField" type="checkbox"> 重绘此区域</label><label title="锁定后不参与自动匹配或画布拖动"><input id="lockedField" type="checkbox"> 锁定样式</label></div>
-      <div class="review-actions"><button id="preserveBtn">保留此处原图</button><button id="acceptRegionBtn" class="quiet">确认无误</button></div><p id="regionReviewHint" class="field-help"></p></div>
+      <div class="review-actions"><button id="preserveBtn">保留此处原图</button></div><p id="regionReviewHint" class="field-help"></p></div>
       <div class="panel-tabs inspector-tabs" role="tablist" aria-label="区域编辑选项" data-tabs="inspector">
         <button id="textEditTab" role="tab" aria-selected="true" aria-controls="textEditPanel" data-panel="textEditPanel">文字编辑</button>
         <button id="sourceEditTab" role="tab" aria-selected="false" aria-controls="sourceEditPanel" data-panel="sourceEditPanel" tabindex="-1">原图修复</button>
@@ -184,7 +183,7 @@
   <div class="dialog-actions"><button id="cancelFolder">取消</button><button id="chooseFolder" class="primary">选择此文件夹</button></div>
 </dialog>
 <dialog id="savedDialog" aria-labelledby="savedTitle"><div class="dialog-head"><h2 id="savedTitle">导出完成</h2><button id="closeSaved" class="icon-btn" aria-label="关闭导出结果">×</button></div><label class="field">已保存到<input id="savedPath" type="text" readonly></label><div class="dialog-actions"><button id="doneSaved" class="primary">完成</button></div></dialog>
-<dialog id="helpDialog"><div class="dialog-head"><h2>使用说明</h2><button id="closeHelp" class="icon-btn">×</button></div><ol><li>左侧「页面」切换幻灯片，「本页文字」查找当前页的文字框；右侧「文字编辑」调整文字，「原图修复」处理原字擦除与背景。</li><li>导入图片，点击「识别本页」或「批量识别」。识别与拟合在本机运行。</li><li>核对识别文字；编辑后会自动更新预览。若想重新贴合原图，再点「自动匹配字体」。</li><li>调整字体、字重、字号、字距与位置；选中绿色文字框，拖动框内移动、拖动四角缩放、上方圆点旋转，文字随拖动实时变化。字号、字距自动四舍五入为整数。在空白处按住左键拖动可框选完整包含的多个文字框，拖动已选文字可整体移动，Delete 删除；Shift 点击可增减选择，点击空白取消选择。多选后右侧可批量修改字体／字重、字号、字距、笔画和颜色，不同值显示「多种」，每次批量修改可一次撤销。拖动靠近页面中心、边缘或其他文字框时，紫色参考线出现并自动吸附；按住 Alt 临时关闭，或取消「对齐吸附」。方向键可精确微调；在「原图修复」中调整擦除范围时显示橙色框。</li><li>按住「按住看原图」临时查看原图，松开返回；也可使用「滑动对比」检查。复杂图片背景可尝试「纹理局部修复」。</li><li>点击「导出」，选择页面范围和 PPTX、SVG 或 PNG 格式。选择保存文件夹与文件名；全部页面的 SVG / PNG 会按页码打包为 ZIP，同名文件自动编号。左侧「工作区 → 管理」可删除工作区，并在回收站恢复。所有修改自动保存在本机。SVG / PPTX 中的文字为轮廓，继续改字请回到本应用；旧版演示软件可能显示 PNG 兼容预览。</li><li>「集中复核」汇总拟合较弱、异常字距、文字相碰等提示。可定位对比、确认无误、保留单处原图或批量保留本页；确认后若再改动，将重新检查。「恢复多色」可处理当前页或全部页面。</li><li>Ctrl+Z 撤销，Ctrl+Shift+Z 或 Ctrl+Y 重做；也可点击顶部 ↶ / ↷。输入框编辑、移动、调整 OCR 框、删除及匹配结果均可撤销。每页保留最近 80 步，切换页面、自动保存和导出不会清空；刷新窗口后清空。</li></ol><p>支持水平、倾斜及整行旋转的单行文字；旋转角度可自动识别或手动调整。公式由独立模型检测，先完整保留原图；可识别为 LaTeX 后按二维结构重绘。同一行多色文字可从原图提取，也可选中文字手动着色；弧形、透视变形、逐字竖排、复杂艺术字与混合字体仍需拆分、校正；低置信识别默认保留原图。拟合分数用于比较候选，不是正确率。</p><p id="dataPath" class="muted"></p></dialog>
+<dialog id="helpDialog"><div class="dialog-head"><h2>使用说明</h2><button id="closeHelp" class="icon-btn">×</button></div><ol><li>左侧「页面」切换幻灯片，「本页文字」查找当前页的文字框；右侧「文字编辑」调整文字，「原图修复」处理原字擦除与背景。</li><li>导入图片，点击「识别本页」或「批量识别」。识别与拟合在本机运行。</li><li>核对识别文字；编辑后会自动更新预览。若想重新贴合原图，再点「自动匹配字体」。</li><li>调整字体、字重、字号、字距与位置；选中绿色文字框，拖动框内移动、拖动四角缩放、上方圆点旋转，文字随拖动实时变化。字号、字距自动四舍五入为整数。在空白处按住左键拖动可框选完整包含的多个文字框，拖动已选文字可整体移动，Delete 删除；Shift 点击可增减选择，点击空白取消选择。多选后右侧可批量修改字体／字重、字号、字距、笔画和颜色，不同值显示「多种」，每次批量修改可一次撤销。拖动靠近页面中心、边缘或其他文字框时，紫色参考线出现并自动吸附；按住 Alt 临时关闭，或取消「对齐吸附」。方向键可精确微调；在「原图修复」中调整擦除范围时显示橙色框。</li><li>按住「按住看原图」临时查看原图，松开返回；也可切换「原图」与「重绘」检查。复杂图片背景可尝试「纹理局部修复」。</li><li>点击「导出」，选择页面范围和 PPTX、SVG 或 PNG 格式。选择保存文件夹与文件名；全部页面的 SVG / PNG 会按页码打包为 ZIP，同名文件自动编号。左侧「工作区 → 管理」可删除工作区，并在回收站恢复。所有修改自动保存在本机。SVG / PPTX 中的文字为轮廓，继续改字请回到本应用；旧版演示软件可能显示 PNG 兼容预览。</li><li>「集中复核」汇总拟合较弱、异常字距、文字相碰等提示。可定位文字、保留单处原图或批量保留本页。「恢复多色」可处理当前页或全部页面。</li><li>Ctrl+Z 撤销，Ctrl+Shift+Z 或 Ctrl+Y 重做；也可点击顶部 ↶ / ↷。输入框编辑、移动、调整 OCR 框、删除及匹配结果均可撤销。每页保留最近 80 步，切换页面、自动保存和导出不会清空；刷新窗口后清空。</li></ol><p>支持水平、倾斜及整行旋转的单行文字；旋转角度可自动识别或手动调整。公式由独立模型检测，先完整保留原图；可识别为 LaTeX 后按二维结构重绘。同一行多色文字可从原图提取，也可选中文字手动着色；弧形、透视变形、逐字竖排、复杂艺术字与混合字体仍需拆分、校正；低置信识别默认保留原图。拟合分数用于比较候选，不是正确率。</p><p id="dataPath" class="muted"></p></dialog>
 <script src="/canvas-geometry.js"></script>
 <script src="/color-runs.js"></script>
 <script src="/review.js"></script>
