@@ -10,3 +10,6 @@ test('acceptance is invalidated by newly colliding text',()=>{const a=region();a
 test('ordinary text, blank erasure, and disabled formula do not become review noise',()=>{assert.equal(R.collect({pages:[page([region(),{...region(),text:'',id:'b'},{...region(),id:'c',kind:'formula',enabled:false}])]}).length,0);});
 
 test('review acceptance and preservation survive project serialization',()=>{const a=region();a.score=.5;const p=page([a]);a.reviewed_signature=R.signature(p,a);const loaded=JSON.parse(JSON.stringify(p));assert.equal(R.pending(loaded,loaded.regions[0]),false);R.preserve(a);assert.equal(JSON.parse(JSON.stringify(a)).preserve_original,true);});
+
+test('uncertain type is reviewed while preserving source, and can be accepted',()=>{const a={...region(),kind:'formula',enabled:false,preserve_original:true,type_review:'文字／公式待确认',fit_status:'preserved'};const p=page([a]);assert.equal(R.collect({pages:[p]}).length,1);a.reviewed_signature=R.signature(p,a);assert.equal(R.pending(p,a),false);delete a.reviewed_signature;R.preserve(a);assert.equal(R.pending(p,a),false);assert.equal(a.type_review_dismissed,true);});
+test('manual type edits clear automatic type warnings',()=>{const a={...region(),type_review:'文字／公式待确认',fit_status:'edited'};assert.deepEqual(R.reasons(page([a]),a),[]);});

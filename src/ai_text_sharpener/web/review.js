@@ -10,6 +10,7 @@
     return w>2&&h>2&&w*h>Math.min(a[2]*a[3],b[2]*b[3])*.025&&geometry.intersects(first,second);
   }
   function reasons(page,r){
+    if(r.type_review&&r.fit_status!=='edited'&&!r.type_review_dismissed)return [r.type_review];
     if(!r.enabled||!(r.text?.trim()||r.latex?.trim()))return [];
     const hints=[];
     if(r.kind==='formula'&&r.fit_status!=='edited')hints.push('公式结构需核对');
@@ -37,7 +38,7 @@
   function collect(project){
     return (project?.pages||[]).flatMap((page,pageIndex)=>page.regions.filter(r=>pending(page,r)).map(region=>({page,pageIndex,region,reasons:reasons(page,region)})));
   }
-  function preserve(r){r.enabled=false;r.preserve_original=true;delete r.reviewed_signature;}
+  function preserve(r){r.enabled=false;r.preserve_original=true;r.type_review_dismissed=true;delete r.reviewed_signature;}
   const api={reasons,signature,pending,collect,preserve};
   if(typeof module==='object'&&module.exports)module.exports=api;else root.RegionReview=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

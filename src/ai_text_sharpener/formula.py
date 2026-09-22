@@ -78,7 +78,7 @@ def overlaps(box, other):
     return area > .5 * min(w*h,c*d)
 
 
-def combine_formula_regions(regions, detections):
+def combine_formula_regions(regions, detections, *, protect_prose=True):
     """Replace OCR fragments with a single preserved region per detected formula."""
     # A formula detector is only a proposal. Confident mixed-language prose
     # without mathematical operators should remain ordinary OCR text.
@@ -92,7 +92,8 @@ def combine_formula_regions(regions, detections):
         a,b,c,d = detection['bbox']
         intersection = max(0,min(x+w,a+c)-max(x,a))*max(0,min(y+h,b+d)-max(y,b))
         return intersection >= .65*c*d
-    detections = [f for f in detections if not any(prose_covers(r,f) for r in regions)]
+    if protect_prose:
+        detections = [f for f in detections if not any(prose_covers(r,f) for r in regions)]
     expanded = []
     for f in detections:
         box = f['bbox']

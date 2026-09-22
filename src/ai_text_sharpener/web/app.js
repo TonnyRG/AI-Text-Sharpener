@@ -838,8 +838,8 @@ function renderReviewSummary(){
 function renderReviewActions(){
   const r=region();if(!r)return;
   const hints=RegionReview.reasons(page(),r),pending=RegionReview.pending(page(),r);
-  $('regionReviewHint').textContent=r.enabled&&pending?hints.join(' · '):'';
-  $('preserveBtn').disabled=busy||!r.enabled||!!r.locked;
+  $('regionReviewHint').textContent=pending?hints.join(' · '):'';
+  $('preserveBtn').disabled=busy||(!r.enabled&&!pending)||!!r.locked;
   $('preserveBtn').title=r.locked?'请先取消锁定样式':'';
   $('acceptRegionBtn').disabled=busy||!pending;
 }

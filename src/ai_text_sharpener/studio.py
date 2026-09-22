@@ -26,9 +26,10 @@ import resvg_py
 from PIL import Image, ImageFilter
 
 from .colors import recover_colors
+from .classification import resolve_types
 from .geometry import source_frame
 from .fidelity import crop_evidence, fit_region
-from .formula import combine_formula_regions, detect_formulas, fit_formula, recognize_formula, formula_available
+from .formula import detect_formulas, fit_formula, recognize_formula, formula_available
 from .studio_project import StudioStore, compose_page, export_pages, image_inputs, render_page, validate_regions
 from .studio_files import default_export_directory, directory_contents, export_destination, save_export, remember_directory
 from .typography import candidate_fonts, font_catalog, outline_layout, svg_document
@@ -55,16 +56,15 @@ def detect_regions(image_path: Path, progress=None):
     if progress:
         progress("正在检测完整公式区域…")
     formulas = detect_formulas(image)
-    if result.boxes is None:
-        return combine_formula_regions([], formulas)
     # RapidOCR exposes corrected text but not its 180-degree classification in
     # the combined result. Recover that direction from the same line crops.
     from rapidocr.utils.process_img import get_rotate_crop_image
     bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-    crops = [get_rotate_crop_image(bgr, np.asarray(box,dtype=np.float32)) for box in result.boxes]
+    boxes = result.boxes if result.boxes is not None else []
+    crops = [get_rotate_crop_image(bgr, np.asarray(box,dtype=np.float32)) for box in boxes]
     directions = engine.text_cls(crops).cls_res if crops else []
     word_results = getattr(result, "word_results", None) or ()
-    for index, (box, text, score) in enumerate(zip(result.boxes, result.txts, result.scores)):
+    for index, (box, text, score) in enumerate(zip(boxes, result.txts or [], result.scores if result.scores is not None else [])):
         if not text.strip():
             continue
         points = np.asarray(box)
@@ -97,7 +97,8 @@ def detect_regions(image_path: Path, progress=None):
         regions.append(region)
     if len(regions) > 500:
         raise ValueError("文字区域超过 500 个，请将页面拆分后处理。")
-    return combine_formula_regions(regions, formulas)
+    return resolve_types(image, regions, formulas, engine=engine, detect=detect_formulas,
+                         recognize=recognize_formula, fit_math=fit_formula, progress=progress)
 
 
 def restore_plain_text(image, region):
@@ -123,6 +124,8 @@ def restore_plain_text(image, region):
     region.update(kind='text', text=text, original_text=region.get('original_text') or text,
                   font_id=fonts[0], enabled=True, preserve_original=False, score=None,
                   fit_status='edited', alternatives=[], fit_note='已恢复普通文字。')
+    for key in ('type_decision','type_review','type_review_dismissed'):
+        region.pop(key,None)
 
 
 def refine_recognized_bounds(image, region, words):
@@ -403,6 +406,8 @@ class Studio:
             page["regions"] = detect_regions(directory / f"{page['id']}.png", progress)
             formulas = [r for r in page["regions"] if r.get("kind") == "formula"]
             for index, region in enumerate(formulas):
+                if region.get('type_decision'):
+                    continue  # Both candidates were already checked during detection.
                 progress(f"识别公式 {index+1}/{len(formulas)} · 暂保留原图供核对", 5)
                 try:
                     region["latex"] = recognize_formula(image, region)
@@ -416,8 +421,9 @@ class Studio:
             percent = 10 + idx / max(1, len(selected)) * 80
             progress(f"拟合文字 {idx+1}/{len(selected)} · {region['text'][:25]}", percent)
             try:
-                region.update(fit_region(image, region, payload.get("font_ids"),
-                    lambda msg: progress(f"{idx+1}/{len(selected)} · {msg}", percent)))
+                if not (payload['kind']=='analyze' and region.get('type_decision',{}).get('choice')=='text'):
+                    region.update(fit_region(image, region, payload.get("font_ids"),
+                        lambda msg: progress(f"{idx+1}/{len(selected)} · {msg}", percent)))
                 if region.get("enabled") and region.get("color_source") != "manual":
                     try:
                         region.update(recover_colors(image, region))
