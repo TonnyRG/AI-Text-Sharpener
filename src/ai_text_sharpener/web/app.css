@@ -78,6 +78,8 @@ button:focus-visible,summary:focus-visible{outline:2px solid #438d70;outline-off
 
 .sheet>#overlay .rotation-stem{stroke:#176957;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
 .sheet>#overlay .rotation-handle{fill:white;stroke:#176957;stroke-width:1.5;vector-effect:non-scaling-stroke;cursor:grab;pointer-events:all}
+.sheet>#overlay .rotation-angle{pointer-events:none;fill:#176957;stroke:white;paint-order:stroke;stroke-linejoin:round;font-weight:600}
+.sheet>#overlay .rotation-angle.snapped{fill:#bf3995}
 
 .sheet>#overlay rect.drawing{pointer-events:none}
 #multiSelection{padding:18px;line-height:1.8}

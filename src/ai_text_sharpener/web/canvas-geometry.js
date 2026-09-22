@@ -30,10 +30,24 @@ const CanvasGeometry = {
     return {...r,x:r.x+(w-width)/2,y:r.y+(h-height)/2,ink_width:width,ink_height:height,rotation:0};
   },
   rotationAt(start,from,to,snap=false){
+    return CanvasGeometry.snapRotation(start,from,to,{enabled:false,step:snap}).rotation;
+  },
+  snapRotation(start,from,to,{enabled=true,step=false,threshold=3,regions=[]}={}){
     const cx=start.x+start.ink_width/2,cy=start.y+start.ink_height/2;
     const delta=(Math.atan2(to.y-cy,to.x-cx)-Math.atan2(from.y-cy,from.x-cx))*180/Math.PI;
-    const angle=(start.rotation||0)+delta,step=snap?15:1;
-    return ((CanvasGeometry.roundStyle(angle/step)*step+180)%360+360)%360-180;
+    const normalize=a=>((a+180)%360+360)%360-180,angle=normalize((start.rotation||0)+delta);
+    if(step)return {rotation:normalize(CanvasGeometry.roundStyle(angle/15)*15),snapped:true};
+    let best=null;
+    if(enabled){
+      const targets=[-180,-135,-90,-45,0,45,90,135];
+      for(const r of regions)if(r.id!==start.id&&r.enabled&&(r.text?.trim()||r.latex?.trim())&&Number.isFinite(r.rotation||0))
+        targets.push(r.rotation||0);
+      for(const target of targets){
+        const distance=Math.abs(normalize(angle-target));
+        if(distance<=threshold&&(!best||distance<best.distance-1e-8))best={angle:normalize(target),distance};
+      }
+    }
+    return {rotation:best?best.angle:normalize(CanvasGeometry.roundStyle(angle)),snapped:!!best};
   },
   // Coordinates are image pixels; tolerance stays constant in screen pixels at any zoom.
   // Return only position and transient guides: moving must not alter glyphs or erase bounds.

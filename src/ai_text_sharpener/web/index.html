@@ -43,7 +43,7 @@
       </div>
       <div id="viewport" class="viewport"><div id="sheet" class="sheet"><img id="sourceImage" alt="原始图片" draggable="false"><img id="resultImage" alt="文字重绘结果" draggable="false" hidden><div id="liveResult" aria-label="实时重绘结果" hidden></div><div id="compareLine" hidden><span>◀ ▶</span></div><svg id="overlay" aria-label="文字区域画布"></svg></div></div>
       <div class="canvas-foot">
-        <div class="canvas-display" role="group" aria-label="画布显示设置"><label><input type="checkbox" id="boxesChk" checked> 文字框</label><label title="拖动文字时对齐页面或其他文字框；按住 Alt 临时关闭"><input type="checkbox" id="snapChk" checked> 对齐吸附</label></div>
+        <div class="canvas-display" role="group" aria-label="画布显示设置"><label><input type="checkbox" id="boxesChk" checked> 文字框</label><label title="移动对齐页面或文字框；旋转吸附常用角度及其他文字角度；按住 Alt 临时关闭"><input type="checkbox" id="snapChk" checked> 对齐吸附</label></div>
         <label id="compareControl" hidden>原图 <input type="range" id="compareRange" min="0" max="100" value="50" aria-label="原图与重绘对比比例">重绘</label>
         <div class="canvas-zoom"><select id="zoom" aria-label="缩放"><option value="fit">适应窗口</option><option value="1">100%</option><option value="2">200%</option></select><button id="previewBtn" title="编辑后自动更新；也可手动刷新，快捷键 Ctrl+Enter">刷新预览</button></div>
         <span id="canvasHint" role="status"></span>
@@ -121,7 +121,7 @@
       </details>
       <details class="property-section" open>
         <summary><span>文字位置与大小</span><span class="section-meta">px</span></summary>
-        <div class="section-body"><div class="two-col"><label class="field">X<input id="xField" type="number" step="any"></label><label class="field">Y<input id="yField" type="number" step="any"></label></div><label class="field">旋转角度 <span>°</span><input id="rotationField" title="顺时针为正；拖动旋转手柄时按住 Shift 按 15° 旋转" type="number" min="-180" max="180" step="1" value="0"></label></div>
+        <div class="section-body"><div class="two-col"><label class="field">X<input id="xField" type="number" step="any"></label><label class="field">Y<input id="yField" type="number" step="any"></label></div><label class="field">旋转角度 <span>°</span><input id="rotationField" title="顺时针为正；接近常用角度时自动吸附；Shift 按 15° 旋转，Alt 临时关闭吸附" type="number" min="-180" max="180" step="1" value="0"></label></div>
       </details>
       </section>
       <section id="sourceEditPanel" role="tabpanel" aria-labelledby="sourceEditTab" hidden>

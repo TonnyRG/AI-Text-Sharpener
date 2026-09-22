@@ -478,6 +478,20 @@ function drawOverlay() {
       x2:vertical?guide.position:guide.to,y2:vertical?guide.to:guide.position,class:'snap-guide','aria-hidden':'true'}))line.setAttribute(key,value);
     overlay.append(line);
   }
+  if(pointer?.type==='text-rotate'&&pointer.moved&&r){
+    const cx=r.x+r.ink_width/2,cy=r.y+r.ink_height/2;
+    if(pointer.rotationSnapped){
+      const a=r.rotation*Math.PI/180,length=r.ink_width/2+size*3;
+      const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+      for(const [key,value]of Object.entries({x1:cx-Math.cos(a)*length,y1:cy-Math.sin(a)*length,
+        x2:cx+Math.cos(a)*length,y2:cy+Math.sin(a)*length,class:'snap-guide','aria-hidden':'true'}))line.setAttribute(key,value);
+      overlay.append(line);
+    }
+    const label=document.createElementNS('http://www.w3.org/2000/svg','text');
+    for(const [key,value]of Object.entries({x:cx+size*2,y:cy-size*4,'font-size':size*1.4,
+      'stroke-width':size*.35,class:`rotation-angle ${pointer.rotationSnapped?'snapped':''}`,'aria-hidden':'true'}))label.setAttribute(key,value);
+    label.textContent=`${Math.round(r.rotation*10)/10}°`;overlay.append(label);
+  }
 }
 
 function resize() {
@@ -560,7 +574,11 @@ function moveCanvasPointer(evt) {
       updateBox([left,top,right-left,bottom-top]);
     }else{
       const r=region();
-      if(pointer.type==='text-rotate')r.rotation=CanvasGeometry.rotationAt(pointer.start,{x:pointer.sx,y:pointer.sy},pos,evt.shiftKey);
+      if(pointer.type==='text-rotate'){
+        const result=CanvasGeometry.snapRotation(pointer.start,{x:pointer.sx,y:pointer.sy},pos,
+          {enabled:$('snapChk').checked&&!evt.altKey,step:evt.shiftKey&&!evt.altKey,regions:pointer.targets});
+        r.rotation=result.rotation;pointer.rotationSnapped=result.snapped;
+      }
       else if(pointer.type==='text-resize')Object.assign(r,CanvasGeometry.resizeText(pointer.start,pointer.handle,dx,dy));
       else{
         const p=page(),snapped=CanvasGeometry.snapMove(pointer.start,
@@ -596,8 +614,8 @@ function cancelCanvasPointer(){
 }
 for(const event of ['pointercancel','lostpointercapture'])$('overlay').addEventListener(event,cancelCanvasPointer);
 for(const event of ['keydown','keyup'])window.addEventListener(event,evt=>{
-  if(evt.key==='Alt'&&['move','group-move'].includes(pointer?.type)&&pointer.lastEvent)
-    moveCanvasPointer({...pointer.lastEvent,altKey:evt.type==='keydown'});
+  if(['Alt','Shift'].includes(evt.key)&&['move','group-move','text-rotate'].includes(pointer?.type)&&pointer.lastEvent)
+    moveCanvasPointer({...pointer.lastEvent,[evt.key==='Alt'?'altKey':'shiftKey']:evt.type==='keydown'});
 });
 
 async function runJob(kind, extra={}) {

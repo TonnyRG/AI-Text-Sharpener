@@ -99,6 +99,39 @@ test('rotation gesture uses the center and supports 15-degree steps across the s
   assert.equal(rotationAt(r,{x:100,y:-20},{x:100+40*Math.cos(a),y:20+40*Math.sin(a)},true),15);
   assert.equal(rotationAt({...r,rotation:170},{x:100,y:-20},{x:140,y:20}),-100);
 });
+const turn=(angle,options={},region=moving)=>{
+  const cx=region.x+region.ink_width/2,cy=region.y+region.ink_height/2;
+  const a=(angle-(region.rotation||0))*Math.PI/180;
+  return CanvasGeometry.snapRotation(region,{x:cx+100,y:cy},{x:cx+100*Math.cos(a),y:cy+100*Math.sin(a)},options);
+};
+test('rotation magnet catches standard angles from both sides and releases outside tolerance',()=>{
+  for(const angle of [-135,-90,-45,0,45,90,135])for(const offset of [-2.9,2.9]){
+    assert.deepEqual(turn(angle+offset),{rotation:angle,snapped:true});
+    assert.equal(turn(angle+Math.sign(offset)*3.1).snapped,false);
+  }
+  assert.deepEqual(turn(178),{rotation:-180,snapped:true});
+  assert.deepEqual(turn(-178),{rotation:-180,snapped:true});
+});
+test('rotation magnet matches the nearest text or formula angle including locked targets',()=>{
+  assert.deepEqual(turn(27,{regions:[{...target,rotation:26,locked:true},{...target,id:'second',rotation:29}]}),{rotation:26,snapped:true});
+  assert.deepEqual(turn(27,{regions:[{...target,text:'',latex:'x^2',rotation:28}]}),{rotation:28,snapped:true});
+  assert.deepEqual(turn(179,{regions:[{...target,rotation:179.5}]}),{rotation:179.5,snapped:true});
+});
+test('self, preserved and empty regions do not attract rotation',()=>{
+  assert.deepEqual(turn(27,{regions:[{...moving,rotation:27},{...target,rotation:27,enabled:false},{...target,rotation:27,text:''}]}),{rotation:27,snapped:false});
+});
+test('rotation bypass is free, Shift constrains to 15 degrees even with magnets disabled',()=>{
+  assert.deepEqual(turn(2,{enabled:false}),{rotation:2,snapped:false});
+  assert.deepEqual(turn(23,{enabled:false,step:true}),{rotation:30,snapped:true});
+  assert.deepEqual(turn(-23,{step:true}),{rotation:-30,snapped:true});
+  assert.deepEqual(turn(23,{regions:[{...target,rotation:23}],step:true}),{rotation:30,snapped:true});
+});
+test('rotation magnet uses the drag snapshot without changing position, size or erase bounds',()=>{
+  const before=structuredClone(moving),r={...moving,rotation:170};
+  assert.deepEqual(turn(-89,{},r),{rotation:-90,snapped:true});
+  assert.deepEqual(moving,before);
+  assert.deepEqual(Object.keys(turn(45)).sort(),['rotation','snapped']);
+});
 test('a rotated text frame snaps by visible bounds and preserves its center',()=>{
   const r={...moving,rotation:90};
   const result=snapMove(r,384,253,slide);
