@@ -241,6 +241,10 @@ function batchFontOptions(){
 }
 function updateBatchAvailability(){
   const regions=selectedRegions();
+  const count=RegionReview.preservable(page(),regions).length;
+  $('preserveSelectedBtn').disabled=busy||!count;
+  $('preserveSelectedBtn').textContent=count?`保留选中原图 · ${count}`:'保留选中原图';
+  $('preserveSelectedBtn').title=regions.some(r=>r.locked)?'锁定区域不参与修改':'';
   for(const [id,key] of [...batchFields,['batchFontField','font_id'],['batchFontSearch','font_id'],['batchColorField','color'],['batchColorText','color']])
     $(id).disabled=busy||!BatchStyle.targets(regions,key).length;
 }
@@ -893,6 +897,15 @@ $('reviewBtn').onclick=()=>{if(busy||!project)return;renderReviewList();$('revie
 $('reviewScope').onchange=renderReviewList;
 for(const id of ['closeReview','doneReview'])$(id).onclick=()=>$('reviewDialog').close();
 $('preserveBtn').onclick=()=>preserveRegion(selectedId);
+$('preserveSelectedBtn').onclick=()=>{
+  if(busy||!page())return;
+  const regions=selectedRegions(),targets=RegionReview.preservable(page(),regions);
+  if(!targets.length)return;
+  history();targets.forEach(RegionReview.preserve);
+  markDirty();renderRegions();renderInspector();setBusy(busy);
+  const locked=regions.filter(r=>r.locked).length;
+  toast(`已保留 ${targets.length} 处原图`+(locked?`，跳过 ${locked} 处锁定区域`:''));
+};
 $('preserveReviewPage').onclick=()=>{
   if(busy||!page())return;const selected=page().regions.filter(r=>!r.locked&&RegionReview.pending(page(),r));if(!selected.length)return;
   history();selected.forEach(RegionReview.preserve);markDirty();renderRegions();renderInspector();toast(`本页 ${selected.length} 处已保留原图，可撤销。`);

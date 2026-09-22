@@ -41,6 +41,9 @@
     return (project?.pages||[]).flatMap((page,pageIndex)=>page.regions.filter(r=>pending(page,r)).map(region=>({page,pageIndex,region,reasons:reasons(page,region)})));
   }
   function preserve(r){r.enabled=false;r.preserve_original=true;r.type_review_dismissed=true;delete r.reviewed_signature;}
-  const api={reasons,signature,pending,collect,preserve};
+  function preservable(page,regions){
+    return regions.filter(r=>!r.locked&&(r.enabled||!r.preserve_original||pending(page,r)));
+  }
+  const api={reasons,signature,pending,collect,preserve,preservable};
   if(typeof module==='object'&&module.exports)module.exports=api;else root.RegionReview=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
