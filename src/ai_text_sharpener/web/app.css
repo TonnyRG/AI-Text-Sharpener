@@ -63,11 +63,12 @@ button:focus-visible,summary:focus-visible{outline:2px solid #438d70;outline-off
 .canvas-tools{display:flex;align-items:center;gap:3px}.canvas-tools button{font-size:11px;padding:6px 9px;border-color:transparent;background:transparent;white-space:nowrap}
 .canvas-tools button.active{background:#e4eee8;border-color:#bad0c3;color:#176957}
 .viewbar{padding:10px 16px;gap:8px}.view-tools{gap:7px}.view-tools #peekBtn{border-color:transparent;background:transparent;color:#536e60}
-.canvas-foot{flex-wrap:wrap;padding:9px 16px;gap:8px 14px;background:#fcfdfd;flex-shrink:0}
+.canvas-foot{position:relative;flex-wrap:wrap;padding:9px 16px;gap:8px 14px;background:#fcfdfd;flex-shrink:0}
 .canvas-display,.canvas-zoom{display:flex;align-items:center;gap:10px}.canvas-display label{font-size:10px;color:#657b6f;gap:0}
 .canvas-zoom{margin-left:auto;gap:6px}.canvas-zoom select{width:auto;min-width:90px;font-size:10px;padding:5px 7px}
 .canvas-zoom button{padding:5px 8px;color:#657b6f;border-color:transparent;background:transparent}
-.canvas-foot #canvasHint{flex-basis:100%;font-size:10px;line-height:1.6}.canvas-foot #compareRange{width:70px}
+/* Preview status must never resize the viewport or retrigger fit-to-window. */
+.canvas-foot #canvasHint{position:absolute;right:16px;bottom:calc(100% + 8px);max-width:calc(100% - 32px);padding:4px 8px;border-radius:5px;background:#fcfdfdf2;box-shadow:0 1px 5px #22332d12;font-size:10px;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;z-index:4}.canvas-foot #compareRange{width:70px}
 .inspector-tabs{margin-bottom:12px}.inspector-tabs [role=tab]{font-size:12px;padding:9px 5px}
 .repair-caption{margin:0 5px 12px}.inspector .section-body{padding:10px 12px 12px}.property-section>summary{padding:10px 12px}
 .region-summary{padding:12px 5px}.inspector .field input,.inspector .field select{padding:6px 8px}
