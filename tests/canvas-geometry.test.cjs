@@ -4,6 +4,35 @@ const CanvasGeometry=require('../src/ai_text_sharpener/web/canvas-geometry.js');
 const {resizeText,snapMove}=require('../src/ai_text_sharpener/web/canvas-geometry.js');
 const start={x:80,y:50,ink_width:200,ink_height:40,font_size:40,letter_spacing:2,stroke_width:1};
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
+const alignItems=()=>[
+  {id:'a',enabled:true,text:'a',x:30,y:20,ink_width:60,ink_height:20},
+  {id:'b',enabled:true,text:'b',x:170,y:90,ink_width:40,ink_height:30},
+  {id:'c',enabled:true,kind:'formula',latex:'x^2',x:310,y:200,ink_width:90,ink_height:40},
+];
+for(const [mode,axis,factor] of [['left','x',0],['centerX','x',.5],['right','x',1],['top','y',0],['centerY','y',.5],['bottom','y',1]])test(`multi-selection ${mode} uses visible rotated bounds`,()=>{
+  const rs=alignItems();rs[1].rotation=30;const before=structuredClone(rs);
+  const patches=CanvasGeometry.alignSelection(rs,mode);assert.deepEqual(rs,before);
+  const result=rs.map(r=>({...r,...patches.find(p=>p.id===r.id)}));
+  const coords=result.map(r=>{const b=CanvasGeometry.bounds(r);return b[axis]+b[axis==='x'?'ink_width':'ink_height']*factor;});
+  coords.forEach(v=>close(v,coords[0]));
+  patches.forEach(p=>assert.deepEqual(Object.keys(p).sort(),['id','x','y']));
+});
+for(const [mode,axis] of [['distributeX','x'],['distributeY','y']])test(`${mode} makes equal edge gaps while keeping end objects fixed`,()=>{
+  const rs=alignItems(),before=structuredClone(rs),patches=CanvasGeometry.alignSelection(rs,mode);
+  const result=rs.map(r=>({...r,...patches.find(p=>p.id===r.id)}));
+  const length=axis==='x'?'ink_width':'ink_height';
+  close(result[1][axis]-result[0][axis]-result[0][length],result[2][axis]-result[1][axis]-result[1][length]);
+  assert.deepEqual(result[0],before[0]);assert.deepEqual(result[2],before[2]);
+});
+test('alignment excludes locked, preserved and missing geometry and is a no-op when already aligned',()=>{
+  const rs=alignItems();rs.push({...rs[0],id:'locked',locked:true,x:-500},{...rs[0],id:'off',enabled:false,x:-500},{...rs[0],id:'invalid',ink_width:NaN});
+  const patches=CanvasGeometry.alignSelection(rs,'left');assert.deepEqual(patches.map(p=>p.id),['b','c']);
+  patches.forEach(p=>Object.assign(rs.find(r=>r.id===p.id),p));assert.deepEqual(CanvasGeometry.alignSelection(rs,'left'),[]);
+  assert.deepEqual(CanvasGeometry.alignSelection(rs.slice(0,2),'distributeY'),[]);
+});
+test('distribution does not introduce overlap when outer objects have insufficient space',()=>{
+  const rs=alignItems();rs[1].x=40;rs[2].x=50;assert.throws(()=>CanvasGeometry.alignSelection(rs,'distributeX'),/空间不足/);
+});
 for(const corner of ['nw','ne','se','sw'])test(`${corner}: scale glyphs and keep opposite corner fixed`,()=>{
   const west=corner.includes('w'),north=corner.includes('n');
   const resized=resizeText(start,corner,west?-100:100,north?-20:20);

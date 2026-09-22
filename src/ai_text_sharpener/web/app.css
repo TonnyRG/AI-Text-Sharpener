@@ -88,6 +88,7 @@ button:focus-visible,summary:focus-visible{outline:2px solid #438d70;outline-off
 
 #multiSelection{padding:0 12px 16px;line-height:1.6}#multiSelection .region-summary{padding:14px 5px 6px}
 .batch-preserve{margin:0 5px 12px}.batch-preserve button{width:100%}
+.alignment-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.alignment-grid button{padding:6px 2px;font-size:10px;white-space:nowrap}
 #batchFontSearch{font-size:11px;margin:6px 0}#batchFontField{font-size:11px}
 .batch-color{display:flex;align-items:center;gap:8px;margin-top:6px}.batch-color input[type=color]{flex:none;width:34px;height:30px;padding:0;border:0;background:none}
 .batch-color input[type=text]{font:12px ui-monospace,monospace}.batch-color .mixed-color{opacity:.5}

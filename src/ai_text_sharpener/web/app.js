@@ -245,6 +245,12 @@ function updateBatchAvailability(){
   $('preserveSelectedBtn').disabled=busy||!count;
   $('preserveSelectedBtn').textContent=count?`保留选中原图 · ${count}`:'保留选中原图';
   $('preserveSelectedBtn').title=regions.some(r=>r.locked)?'锁定区域不参与修改':'';
+  const alignable=CanvasGeometry.alignmentTargets(regions).length;
+  for(const button of $('batchAlignment').querySelectorAll('button')){
+    button.disabled=busy||mode==='original'||alignable<(button.dataset.align.startsWith('distribute')?3:2)||
+      CanvasGeometry.alignmentTargets(regions).some(r=>!liveLayers.has(r.id));
+    button.title=mode==='original'?'请切换到重绘视图':'按所选区域对齐，跳过锁定及保留原图区域';
+  }
   for(const [id,key] of [...batchFields,['batchFontField','font_id'],['batchFontSearch','font_id'],['batchColorField','color'],['batchColorText','color']])
     $(id).disabled=busy||!BatchStyle.targets(regions,key).length;
 }
@@ -291,6 +297,19 @@ $('batchColorField').oninput=safeRun(()=>applyBatchStyle('color',$('batchColorFi
 $('batchColorText').oninput=safeRun(()=>{const color=$('batchColorText').value.trim();if(/^#[0-9a-f]{6}$/i.test(color))return applyBatchStyle('color',color,'batchColor');});
 $('batchColorText').onchange=safeRun(()=>{const color=$('batchColorText').value.trim();if(color)return applyBatchStyle('color',color,'batchColor');});
 $('batchColorText').onkeydown=e=>{if(e.key==='Enter')e.currentTarget.blur();};
+for(const button of $('batchAlignment').querySelectorAll('button'))button.onclick=safeRun(()=>{
+  if(busy||mode==='original')return;
+  const changes=CanvasGeometry.alignSelection(selectedRegions(),button.dataset.align);
+  if(!changes.length)return;
+  history();
+  for(const patch of changes){
+    const r=page().regions.find(r=>r.id===patch.id);
+    Object.assign(r,patch,{score:null,fit_status:'edited',alternatives:[]});
+    delete r.reviewed_signature;delete r.alignment_adjustment;
+    transformLiveRegion(r);
+  }
+  markDirty(true);renderRegions();renderInspector();setBusy(busy);
+});
 function renderGeometryFields(r) {
   const rounded=v=>Math.round(v*1000)/1000;
   for(const [id,key] of [['sizeField','font_size'],['spacingField','letter_spacing'],['strokeField','stroke_width'],['xField','x'],['yField','y'],['rotationField','rotation'],['sourceRotationField','source_rotation']])
@@ -506,7 +525,7 @@ function setMode(next) {
   if(next!=='original'&&(!p||(p.render_revision<0&&!previewUrl))){next='original';}
   mode=next;
   for(const b of $('viewModes').children)b.classList.toggle('active',b.dataset.mode===mode);
-  showCanvasLayers();drawOverlay();updateCanvasHint();updateCanvasTools();
+  showCanvasLayers();drawOverlay();updateCanvasHint();updateCanvasTools();updateBatchAvailability();
 }
 function position(evt) {const b=$('sheet').getBoundingClientRect();const p=page();return{x:(evt.clientX-b.left)*p.width/b.width,y:(evt.clientY-b.top)*p.height/b.height};}
 $('viewport').addEventListener('pointerdown',evt=>{

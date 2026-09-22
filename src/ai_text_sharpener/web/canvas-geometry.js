@@ -1,6 +1,31 @@
 'use strict';
 // Pure geometry shared by canvas manipulation and regression tests.
 const CanvasGeometry = {
+  alignmentTargets(regions){
+    return regions.filter(r=>r.enabled&&!r.locked&&(r.text?.trim()||r.latex?.trim())&&
+      [r.x,r.y,r.ink_width,r.ink_height].every(Number.isFinite)&&r.ink_width>0&&r.ink_height>0);
+  },
+  alignSelection(regions,mode){
+    const rules={left:['x',0],centerX:['x',.5],right:['x',1],top:['y',0],centerY:['y',.5],bottom:['y',1],distributeX:['x',null],distributeY:['y',null]};
+    if(!rules[mode])throw new Error('不支持的对齐方式。');
+    const items=CanvasGeometry.alignmentTargets(regions).map(r=>({r,b:CanvasGeometry.bounds(r)}));
+    const [axis,factor]=rules[mode],length=axis==='x'?'ink_width':'ink_height';
+    if(items.length<(factor===null?3:2))return [];
+    const low=Math.min(...items.map(i=>i.b[axis])),high=Math.max(...items.map(i=>i.b[axis]+i.b[length]));
+    const positions=new Map();
+    if(factor===null){
+      items.sort((a,b)=>a.b[axis]-b.b[axis]);
+      const first=items[0],last=items[items.length-1];
+      const gap=(last.b[axis]-first.b[axis]-items.slice(0,-1).reduce((sum,i)=>sum+i.b[length],0))/(items.length-1);
+      if(gap<0)throw new Error('所选区域空间不足，请先拉开首尾区域。');
+      let at=first.b[axis];
+      items.forEach((item,index)=>{positions.set(item.r.id,index===items.length-1?last.b[axis]:at);at+=item.b[length]+gap;});
+    }else for(const item of items)positions.set(item.r.id,low+(high-low)*factor-item.b[length]*factor);
+    return items.flatMap(({r,b})=>{
+      const delta=positions.get(r.id)-b[axis];
+      return Math.abs(delta)<.001?[]:[{id:r.id,x:r.x+(axis==='x'?delta:0),y:r.y+(axis==='y'?delta:0)}];
+    });
+  },
   marqueeIds(regions, from, to, original=false){
     const left=Math.min(from.x,to.x),right=Math.max(from.x,to.x),top=Math.min(from.y,to.y),bottom=Math.max(from.y,to.y);
     return regions.filter(r=>{
