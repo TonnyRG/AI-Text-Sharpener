@@ -33,5 +33,37 @@
     }
     return {changes,value};
   }
-  const api={targets,common,plan};if(typeof module==='object'&&module.exports)module.exports=api;else root.BatchStyle=api;
+  function referenceable(r){
+    return !!r&&r.enabled&&r.kind!=='formula'&&!!r.text?.trim()&&!!r.font_id&&
+      Number.isFinite(r.font_size)&&r.font_size>=4&&r.font_size<=1000;
+  }
+  function similar(regions,reference){
+    if(!referenceable(reference))return [];
+    const tolerance=Math.max(1,Math.min(2,reference.font_size*.06));
+    const angle=r=>((r.rotation||0)+360)%360;
+    return [reference.id,...regions.filter(r=>{
+      if(r.id===reference.id||!referenceable(r)||r.locked)return false;
+      const delta=Math.abs(angle(r)-angle(reference));
+      if(Math.min(delta,360-delta)>2||Math.abs(r.font_size-reference.font_size)>tolerance)return false;
+      // Horizontal source boxes help separate small caps/captions from full
+      // body text of a coincidentally similar fitted size. Selection is only a
+      // suggestion; it never changes text or claims to infer semantic levels.
+      if(Math.abs(r.source_rotation||0)<.5&&Math.abs(reference.source_rotation||0)<.5&&
+          r.bbox?.[3]>0&&reference.bbox?.[3]>0&&
+          Math.abs(r.bbox[3]-reference.bbox[3])>Math.max(4,reference.bbox[3]*.18))return false;
+      return true;
+    }).map(r=>r.id)];
+  }
+  function fromReference(regions,reference,font){
+    if(!referenceable(reference))throw new Error('请选择一处已启用的普通文字作为参考。');
+    const items=regions.filter(r=>r.id!==reference.id&&referenceable(r)),changes=new Map();
+    for(const [key,value] of [['font_id',reference.font_id],['font_size',reference.font_size],['stroke_width',reference.stroke_width||0]]){
+      for(const change of plan(items,key,value,font).changes){
+        if(!changes.has(change.id))changes.set(change.id,{id:change.id,patch:{}});
+        Object.assign(changes.get(change.id).patch,change.patch,{alignment_adjustment:null,size_normalization:null});
+      }
+    }
+    return {changes:[...changes.values()]};
+  }
+  const api={targets,common,plan,referenceable,similar,fromReference};if(typeof module==='object'&&module.exports)module.exports=api;else root.BatchStyle=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

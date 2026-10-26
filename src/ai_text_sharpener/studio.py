@@ -27,6 +27,7 @@ from PIL import Image, ImageFilter
 
 from .colors import recover_colors
 from .alignment import align_page
+from .style_consistency import normalize_page
 from .classification import resolve_types
 from .geometry import source_frame
 from .fidelity import crop_evidence, fit_region
@@ -434,6 +435,8 @@ class Studio:
                 region.update(enabled=False, fit_status="preserved", fit_note=str(exc))
                 self.job["warnings"].append(f"{page['name']} · {region['text'][:20]}：{exc}")
         if payload['kind'] == 'analyze':
+            progress('校正相近字号…', 90)
+            normalize_page(image, page['regions'])
             progress('校正文字对齐…', 92)
             align_page(image, page['regions'])
         if not page["regions"]:

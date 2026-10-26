@@ -4,6 +4,7 @@ let token = '', fonts = [], project = null, pageId = null, selectedId = null;
 let mode = 'original', dirty = false, busy = false, mutation = 0, saving = null;
 let saveTimer, toastTimer, newImport = false, drawing = false, pointer = null;
 let undo = [], redo = [], selectedIds = [];
+let styleReferenceId = null;
 const selection = () => [...new Set([selectedId,...selectedIds])].filter(Boolean);
 const selectedRegions = () => {const ids=new Set(selection());return (page()?.regions||[]).filter(r=>ids.has(r.id));};
 const pageHistories = new Map();
@@ -190,7 +191,7 @@ function renderProject() {
     const label = document.createElement('span'); label.textContent = `${item.name} · ${item.status==='error'?'处理失败':item.pending_rescan?'待重新识别':item.status==='review'||item.regions.length?'已处理':'未处理'}`;
     if(item.error)button.title=item.error;
     button.append(img, label); button.onclick = safeRun(async () => {
-      if (busy) return; await flush(); resetPreview();pageId = item.id; selectedId = null; bindHistory();mode=page()?.render_revision>=0?'result':'original';previewAutoShow=!!page()?.regions.length;renderProject();
+      if (busy) return; await flush(); if(busy)return; resetPreview();pageId = item.id; selectedId = null; bindHistory();mode=page()?.render_revision>=0?'result':'original';previewAutoShow=!!page()?.regions.length;renderProject();
     }); $('pages').append(button);
   }
   if (p) {
@@ -223,6 +224,7 @@ function select(id, additive=false) {
 }
 function setSelection(ids){
   editGroup=null;selectedIds=[...new Set(ids)];selectedId=selectedIds[0]||null;
+  styleReferenceId=selectedId;
   if(selectedIds.length!==1){editingBox=false;updateBoxButton();}
   renderRegions();renderInspector();updateCanvasHint();
 }
@@ -241,6 +243,10 @@ function batchFontOptions(){
 }
 function updateBatchAvailability(){
   const regions=selectedRegions();
+  $('selectSimilarStyleBtn').disabled=busy||!BatchStyle.referenceable(region());
+  const reference=regions.find(r=>r.id===styleReferenceId);
+  $('styleReferenceField').disabled=busy||!regions.some(BatchStyle.referenceable);
+  $('unifyStyleBtn').disabled=busy||!BatchStyle.referenceable(reference)||!regions.some(r=>r.id!==reference.id&&!r.locked&&BatchStyle.referenceable(r));
   const count=RegionReview.preservable(page(),regions).length;
   $('preserveSelectedBtn').disabled=busy||!count;
   $('preserveSelectedBtn').textContent=count?`保留选中原图 · ${count}`:'保留选中原图';
@@ -256,6 +262,10 @@ function updateBatchAvailability(){
 }
 function renderBatchStyles(){
   const regions=selectedRegions(),editable=BatchStyle.targets(regions,'font_size').length;
+  const references=regions.filter(BatchStyle.referenceable);
+  if(!references.some(r=>r.id===styleReferenceId))styleReferenceId=references.find(r=>r.id===selectedId)?.id||references[0]?.id||null;
+  $('styleReferenceField').replaceChildren(...references.map(r=>new Option(`${r.text.slice(0,22)} · ${r.font_size} px`,r.id)));
+  $('styleReferenceField').value=styleReferenceId||'';
   const locked=regions.filter(r=>r.locked).length,preserved=regions.filter(r=>!r.locked&&!r.enabled).length;
   $('batchScope').textContent=locked||preserved?`可编辑 ${editable}`+(locked?` · 锁定 ${locked}`:'')+(preserved?` · 保留原图 ${preserved}`:''):'';
   for(const [id,key] of batchFields){
@@ -271,6 +281,7 @@ function renderBatchStyles(){
 }
 async function applyBatchStyle(key,raw,group){
   if(busy||selection().length<2)return;
+  const originalProject=project,originalPage=page(),originalMutation=mutation;
   const regions=selectedRegions(),font=key==='font_id'?fonts.find(f=>f.id===raw):null;
   const result=BatchStyle.plan(regions,key,raw,font);
   if(!result.changes.length){renderBatchStyles();return;}
@@ -283,10 +294,34 @@ async function applyBatchStyle(key,raw,group){
       await api('/api/preview',{project_id:project.id,page_id:pageId,regions:candidate});
     }catch(e){renderBatchStyles();throw e;}finally{setBusy(false);}
   }
+  if(project!==originalProject||page()!==originalPage||mutation!==originalMutation){toast('页面已变化，请重新应用样式');return;}
   history(group);
-  for(const {id,patch} of result.changes)Object.assign(page().regions.find(r=>r.id===id),patch);
+  for(const {id,patch} of result.changes)Object.assign(originalPage.regions.find(r=>r.id===id),patch);
   markDirty();renderRegions();renderBatchStyles();
 }
+$('selectSimilarStyleBtn').onclick=()=>{
+  if(busy)return;
+  const ids=BatchStyle.similar(page()?.regions||[],region());
+  if(ids.length<2){toast('本页没有其他相近字号的文字');return;}
+  setSelection(ids);
+};
+$('styleReferenceField').onchange=()=>{styleReferenceId=$('styleReferenceField').value;updateBatchAvailability();};
+$('unifyStyleBtn').onclick=safeRun(async()=>{
+  if(busy)return;
+  const originalProject=project,originalPage=page(),originalMutation=mutation;
+  const reference=selectedRegions().find(r=>r.id===styleReferenceId);
+  const result=BatchStyle.fromReference(selectedRegions(),reference,fonts.find(f=>f.id===reference?.font_id));
+  if(!result.changes.length){toast('所选文字的字体与字号已一致');return;}
+  const candidate=clone(originalPage.regions);
+  for(const {id,patch} of result.changes)Object.assign(candidate.find(r=>r.id===id),patch);
+  setBusy(true);
+  try{await api('/api/preview',{project_id:project.id,page_id:pageId,regions:candidate});}
+  finally{setBusy(false);}
+  if(project!==originalProject||page()!==originalPage||mutation!==originalMutation){toast('页面已变化，请重新应用样式');return;}
+  history();
+  for(const {id,patch} of result.changes)Object.assign(originalPage.regions.find(r=>r.id===id),patch);
+  markDirty();renderRegions();renderInspector();toast(`已统一 ${result.changes.length} 处文字`);
+});
 for(const [id,key] of batchFields)$(id).addEventListener('input',safeRun(async()=>{
   const field=$(id);if(field.value===''||field.validity.badInput||field.validity.rangeUnderflow||field.validity.rangeOverflow)return;
   await applyBatchStyle(key,field.value,id);
@@ -320,6 +355,7 @@ function renderInspector() {
   $('noSelection').hidden=!!r;$('properties').hidden=!r||count>1;
   $('multiSelection').hidden=count<2;$('selectionCount').textContent=`已选中 ${count} 个文字区域`;
   $('deleteSelected').disabled=busy||!selectedRegions().some(r=>!r.locked);
+  updateBatchAvailability();
   if(count>1){renderBatchStyles();return;}
   if(!r)return;
   const math=r.kind==='formula';$('kindField').value=math?'formula':'text';$('formulaPanel').hidden=!math;$('plainTextLabel').hidden=math;
@@ -685,7 +721,7 @@ $('fileInput').onchange=safeRun(()=>upload([...$('fileInput').files]));
 for(const id of ['importBtn','welcomeImport'])$(id).onclick=()=>{newImport=false;$('fileInput').click();};
 $('newBtn').onclick=()=>{newImport=true;$('fileInput').click();};
 $('demoBtn').onclick=safeRun(async()=>{if(busy)return;await flush();setBusy(true);try{project=await api('/api/demo',{});await refreshProjects();await loadProject(project.id);toast('示例已加载');}finally{setBusy(false);}});
-$('projectSelect').onchange=safeRun(async()=>{const id=$('projectSelect').value;if(!id||busy)return;await flush();await loadProject(id);});
+$('projectSelect').onchange=safeRun(async()=>{const id=$('projectSelect').value;if(!id||busy)return;await flush();if(busy)return;await loadProject(id);});
 $('analyzeBtn').onclick=safeRun(async()=>{const reset=!!page()?.regions.length;if(reset&&!confirm('重新识别将替换本页现有文字区域和手动修改。是否继续？'))return;await runJob('analyze',{reset});});
 $('analyzeAllBtn').onclick=()=>{
   if(busy||!project)return;

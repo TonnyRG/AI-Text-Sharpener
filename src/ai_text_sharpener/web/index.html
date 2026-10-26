@@ -67,6 +67,9 @@
       <details class="property-section" open>
         <summary><span>批量字体与样式</span></summary>
         <div class="section-body">
+          <label class="field" for="styleReferenceField">参考文字</label>
+          <select id="styleReferenceField" aria-label="统一样式的参考文字"></select>
+          <button id="unifyStyleBtn" class="full-width" title="套用参考文字的字体、字重、字号与笔画加粗；保留颜色、字距和位置">统一字体与字号</button>
           <label class="field" for="batchFontField">字体 / 字重</label>
           <input id="batchFontSearch" type="search" placeholder="搜索本机字体…" aria-label="批量搜索字体">
           <select id="batchFontField" aria-label="批量字体及字重"></select>
@@ -112,6 +115,7 @@
             <label class="field" for="fontField">字体 / 字重</label>
             <input id="fontSearch" type="search" placeholder="搜索本机字体…" aria-label="搜索字体">
             <select id="fontField" aria-label="字体及字重"></select>
+            <button id="selectSimilarStyleBtn" class="full-width" title="选中本页字号、方向与原字高度相近的文字；可用 Shift 点击增减选择">选择相近字号</button>
           </div>
           <div class="two-col"><label class="field">字号 <span>px</span><input id="sizeField" title="自动四舍五入为整数" type="number" min="4" max="1000" step="1"></label><label class="field">字距 <span>px</span><input id="spacingField" title="自动四舍五入为整数" type="number" min="-300" max="300" step="1"></label></div>
           <div class="two-col style-row"><label class="field">笔画加粗 <span>px</span><input id="strokeField" type="number" min="0" max="12" step="any" value="0" title="0 为字体原始字重；需变细时选择较轻字重"></label><label class="field">文字颜色<div class="color-control"><input id="colorField" type="color" aria-label="文字颜色"><span id="colorValue"></span></div></label></div>

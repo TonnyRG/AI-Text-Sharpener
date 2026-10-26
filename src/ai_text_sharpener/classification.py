@@ -19,11 +19,21 @@ from .geometry import source_frame
 from .typography import outline_layout, svg_document
 
 
+def numeric_label(text):
+    """Flat numeric labels, excluding operators and two-dimensional notation."""
+    # Normalize only typography; do not turn superscript digits into digits.
+    text = text.translate(str.maketrans('０１２３４５６７８９，．％＋－', '0123456789,.%+-')).strip()
+    number = r'(?:\d{1,3}(?:[,\u2009\u202f ]\d{3})+|\d+)(?:\.\d+)?|\.\d+'
+    return bool(re.fullmatch(r'[+−-]?\s*[$€£¥￥]?\s*(?:' + number + r')\s*(?:[%‰‱]|[$€£¥￥])?', text))
+
+
 def lexical_kind(text):
     """Classify layout needs, not whether the subject matter is mathematical."""
     text = text.strip()
     if not text:
         return 'unknown'
+    if numeric_label(text):
+        return 'text'
     if re.search(r'[=+∑∫√≈≤≥±∂∞^_<>]|[²³⁰¹⁴⁵⁶⁷⁸⁹₀-₉]', text):
         return 'math'
     # Common labels, units, ranges and acronyms remain ordinary single-line text.
@@ -31,6 +41,62 @@ def lexical_kind(text):
         if any(c.isalpha() for c in text) or re.search(r'\d\s*[%％]', text):
             return 'text'
     return 'unknown'
+
+
+def _punctuation_parts(labels, parts, text):
+    """Identify comma tails and percent rings before looking for script glyphs.
+
+    OCR punctuation alone is insufficient: a percent must have two rings and a
+    rising slash in the source, and a comma must sit just below the main baseline.
+    Fractions are checked separately against the complete, unfiltered image.
+    """
+    ignored = set()
+    if '%' in text or '％' in text:
+        holes = {}
+        for label, (x, y, w, h, _) in parts:
+            mask = np.uint8(labels[y:y+h, x:x+w] == label)
+            _, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+            holes[label] = hierarchy is not None and np.any(hierarchy[0, :, 3] >= 0)
+            # At small sizes antialias thresholding can open a ring by one row.
+            center = mask[h//4:max(h//4+1,3*h//4), w//3:max(w//3+1,2*w//3)]
+            sides = mask[h//4:max(h//4+1,3*h//4)]
+            if w >= 4 and h >= 5 and center.mean() < .35:
+                holes[label] |= bool(sides[:, :max(1,w//3)].any(axis=1).mean() > .7
+                                     and sides[:, max(1,2*w//3):].any(axis=1).mean() > .7)
+        remaining = text.count('%') + text.count('％')
+        for slash, (x, y, w, h, area) in parts:
+            if not remaining or slash in ignored or holes[slash] or not (.15*h <= w <= .9*h and area < .45*w*h):
+                continue
+            sy, sx = np.nonzero(labels[y:y+h, x:x+w] == slash)
+            if len(sx) < 4 or np.std(sx) < 1 or np.std(sy) < 1 or np.corrcoef(sx, sy)[0, 1] > -.7:
+                continue
+            upper, lower = [], []
+            for ring, (rx, ry, rw, rh, _) in parts:
+                if ring in ignored or not holes[ring] or not (.28*h <= rh <= .65*h and .5*rh <= rw <= 1.6*rh):
+                    continue
+                cx, cy = rx+rw/2, ry+rh/2
+                if x-.4*h <= cx < x+w/2 and abs(ry-y) <= .2*h and cy < y+h*.5:
+                    upper.append(ring)
+                if x+w/2 < cx <= x+w+.4*h and abs(ry+rh-y-h) <= .2*h and cy > y+h*.5:
+                    lower.append(ring)
+            if len(upper) == len(lower) == 1:
+                # Keep the full-height slash as an anchor for a genuine script
+                # immediately after the percent sign.
+                ignored.update((upper[0], lower[0]))
+                remaining -= 1
+    commas = text.count(',') + text.count('，')
+    if commas:
+        body = [s for label, s in parts if label not in ignored]
+        if body:
+            height = float(np.percentile([s[3] for s in body], 75))
+            baseline = float(np.median([s[1]+s[3] for s in body if s[3] >= height*.8]))
+            tails = [label for label, (x, y, w, h, area) in parts if label not in ignored
+                     and .15*height <= h <= .52*height and w <= .32*height
+                     and y >= baseline-.3*height and baseline+.05*height <= y+h <= baseline+.3*height]
+            # More candidates than OCR commas means the glyph mapping is unclear.
+            if len(tails) <= commas:
+                ignored.update(tails)
+    return ignored
 
 
 def structure(image, region):
@@ -41,8 +107,9 @@ def structure(image, region):
     except ValueError:
         return {'fraction': False, 'scripts': False}
     binary = ev['binary']
-    _, _, stats, _ = cv2.connectedComponentsWithStats(binary, 8)
-    parts = [s for s in stats[1:] if s[4] >= 4]
+    _, labels, stats, _ = cv2.connectedComponentsWithStats(binary, 8)
+    indexed = [(label, s) for label, s in enumerate(stats[1:], 1) if s[4] >= 4]
+    parts = [s for _, s in indexed]
     fraction = False
     for x, y, w, h, area in parts:
         if w < 12 or w < 4*h or h > binary.shape[0]*.12:
@@ -55,6 +122,8 @@ def structure(image, region):
     scripts = False
     # Connected components of Chinese glyphs do not correspond to letters.
     if not re.search(r'[\u3400-\u9fff]', region.get('text', '')):
+        ignored = _punctuation_parts(labels, indexed, region.get('text', ''))
+        parts = [s for label, s in indexed if label not in ignored]
         for x, y, w, h, area in parts:
             for bx, by, bw, bh, ba in parts:
                 gap = max(x-bx-bw, bx-x-w)
@@ -68,6 +137,18 @@ def _covers(region, box):
     x,y,w,h = region.get('ocr_bbox',region['bbox']);a,b,c,d = box
     area = max(0,min(x+w,a+c)-max(x,a))*max(0,min(y+h,b+d)-max(y,b))
     return area >= .65*c*d
+
+
+def _safe_text_proposal(image, region, box):
+    if region.get('confidence', 0) < .92 or lexical_kind(region.get('text', '')) != 'text':
+        return False
+    if any(structure(image, region).values()):
+        return False
+    # OCR may omit a small exponent or denominator outside its own box. Check
+    # the detector's full extent before dismissing it as a numeric/text label.
+    x, y, w, h = region['bbox']; a, b, c, d = box
+    extent = [min(x,a), min(y,b), max(x+w,a+c)-min(x,a), max(y+h,b+d)-min(y,b)]
+    return not any(structure(image, dict(text=region.get('text', ''), bbox=extent)).values())
 
 
 def local_retry(image, box, engine, detect, *, single_line=False):
@@ -153,8 +234,7 @@ def resolve_types(image, regions, detections, *, engine, detect, recognize, fit_
     proposals=[]
     for detection in detections:
         members=[r for r in regions if _covers(r,detection['bbox'])]
-        safe=any(r.get('confidence',0)>=.92 and lexical_kind(r.get('text',''))=='text'
-                 and not any(structure(image,r).values()) for r in members)
+        safe=any(_safe_text_proposal(image, r, detection['bbox']) for r in members)
         if not safe:
             proposals.append(detection)
     # OCR can expose small expressions missed by the whole-slide detector.

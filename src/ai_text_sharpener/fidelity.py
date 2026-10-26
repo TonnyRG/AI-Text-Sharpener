@@ -159,7 +159,14 @@ def fit_region(image: np.ndarray, region: dict, font_ids=None, progress=None) ->
     return best
 
 
-def _fit_at_angle(image: np.ndarray, region: dict, font_ids=None, progress=None) -> dict:
+def fit_region_at_size(image: np.ndarray, region: dict, size: int) -> dict:
+    """Refit spacing/position at one exact size, retaining the current font face."""
+    if not 4 <= size <= 1000 or size != round_style(size):
+        raise ValueError("字号必须为 4–1000 之间的整数。")
+    return _fit_at_angle(image, region, [region['font_id']], fixed_size=size)
+
+
+def _fit_at_angle(image: np.ndarray, region: dict, font_ids=None, progress=None, *, fixed_size=None) -> dict:
     result = deepcopy(region)
     text = region["text"].strip()
     if not text:
@@ -190,8 +197,9 @@ def _fit_at_angle(image: np.ndarray, region: dict, font_ids=None, progress=None)
             estimated_size = max(4, min(1000, (ih-stroke_width) * 64 / max(1, base["height"])))
             best = None
             # Estimate spacing from the actual glyph geometry, then refine size.
-            sizes = {max(4,min(1000,round_style(estimated_size*factor)+offset))
-                     for factor in (.92,.97,1.0,1.035,1.08) for offset in (-1,0,1)}
+            sizes = ({fixed_size} if fixed_size is not None else
+                     {max(4,min(1000,round_style(estimated_size*factor)+offset))
+                      for factor in (.92,.97,1.0,1.035,1.08) for offset in (-1,0,1)})
             for size in sorted(sizes):
                 natural = outline_layout(fid, text, round(size, 3), 0.0, stroke_width)
                 spacing = (iw - natural["width"]) / max(1, len(text) - 1)
