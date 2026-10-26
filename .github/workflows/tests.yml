@@ -22,7 +22,7 @@ jobs:
       - name: Install fonts and slide rendering tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fontconfig fonts-liberation fonts-noto-cjk libreoffice-impress poppler-utils
+          sudo apt-get install -y --no-install-recommends fontconfig fonts-liberation fonts-noto-cjk fonts-noto-core fonts-dejavu-core fonts-crosextra-carlito libreoffice-impress poppler-utils
           fc-cache -f
       - name: Install Studio and test dependencies
         run: |

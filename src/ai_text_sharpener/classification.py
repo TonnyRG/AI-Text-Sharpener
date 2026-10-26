@@ -52,37 +52,59 @@ def _punctuation_parts(labels, parts, text):
     """
     ignored = set()
     if '%' in text or '％' in text:
-        holes = {}
+        rings, slashes = [], []
+        full_height = max((s[3] for _, s in parts), default=0)
         for label, (x, y, w, h, _) in parts:
             mask = np.uint8(labels[y:y+h, x:x+w] == label)
-            _, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-            holes[label] = hierarchy is not None and np.any(hierarchy[0, :, 3] >= 0)
+            contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+            holes = [] if hierarchy is None else [cv2.boundingRect(contours[i])
+                for i, item in enumerate(hierarchy[0]) if item[3] >= 0]
+            # Inner contours locate a ring even when its outside touches the
+            # slash (Noto Sans Italic) or the next range dash (Liberation Serif).
+            for hx, hy, hw, hh in holes:
+                rings.append((label, x+hx+hw/2, y+hy+hh/2, hw, hh, h))
             # At small sizes antialias thresholding can open a ring by one row.
             center = mask[h//4:max(h//4+1,3*h//4), w//3:max(w//3+1,2*w//3)]
             sides = mask[h//4:max(h//4+1,3*h//4)]
-            if w >= 4 and h >= 5 and center.mean() < .35:
-                holes[label] |= bool(sides[:, :max(1,w//3)].any(axis=1).mean() > .7
-                                     and sides[:, max(1,2*w//3):].any(axis=1).mean() > .7)
+            if (not holes and w >= 4 and h >= 5 and center.mean() < .35
+                    and sides[:, :max(1,w//3)].any(axis=1).mean() > .7
+                    and sides[:, max(1,2*w//3):].any(axis=1).mean() > .7):
+                rings.append((label, x+w/2, y+h/2, w, h, h))
+            if h < full_height*.8 or h < 8:
+                continue
+            # One silhouette edge still follows the slash when a ring touches
+            # the other side. Validate the actual straight, rising trajectory;
+            # component aspect ratio alone is font/slant dependent.
+            rows = np.flatnonzero(mask.any(axis=1))
+            if len(rows) < h*.9:
+                continue
+            for edge in (mask.argmax(axis=1), w-1-mask[:, ::-1].argmax(axis=1)):
+                slope, intercept = np.polyfit(rows, edge[rows], 1)
+                error = np.sqrt(np.mean((edge[rows]-slope*rows-intercept)**2))
+                if -1.5 <= slope <= -.15 and error <= max(1.,h*.045):
+                    slashes.append((label, y, h, slope, x+intercept))
         remaining = text.count('%') + text.count('％')
-        for slash, (x, y, w, h, area) in parts:
-            if not remaining or slash in ignored or holes[slash] or not (.15*h <= w <= .9*h and area < .45*w*h):
-                continue
-            sy, sx = np.nonzero(labels[y:y+h, x:x+w] == slash)
-            if len(sx) < 4 or np.std(sx) < 1 or np.std(sy) < 1 or np.corrcoef(sx, sy)[0, 1] > -.7:
-                continue
+        used = set()
+        for slash, y, h, slope, intercept in slashes:
+            if not remaining:
+                break
             upper, lower = [], []
-            for ring, (rx, ry, rw, rh, _) in parts:
-                if ring in ignored or not holes[ring] or not (.28*h <= rh <= .65*h and .5*rh <= rw <= 1.6*rh):
+            for index, (ring, cx, cy, rw, rh, component_height) in enumerate(rings):
+                if index in used or not (.12*h <= rh <= .72*h and .2*rh <= rw <= 1.8*rh):
                     continue
-                cx, cy = rx+rw/2, ry+rh/2
-                if x-.4*h <= cx < x+w/2 and abs(ry-y) <= .2*h and cy < y+h*.5:
-                    upper.append(ring)
-                if x+w/2 < cx <= x+w+.4*h and abs(ry+rh-y-h) <= .2*h and cy > y+h*.5:
-                    lower.append(ring)
+                offset = cx-(intercept+slope*(cy-y))
+                if y <= cy <= y+h*.48 and -.85*h <= offset <= -.08*h:
+                    upper.append(index)
+                if y+h*.52 <= cy <= y+h and .08*h <= offset <= .85*h:
+                    lower.append(index)
             if len(upper) == len(lower) == 1:
                 # Keep the full-height slash as an anchor for a genuine script
                 # immediately after the percent sign.
-                ignored.update((upper[0], lower[0]))
+                pair = (upper[0], lower[0])
+                if max(rings[i][4] for i in pair) > 2*min(rings[i][4] for i in pair):
+                    continue
+                ignored.update(rings[i][0] for i in pair if rings[i][5] <= .75*h)
+                used.update(pair)
                 remaining -= 1
     commas = text.count(',') + text.count('，')
     if commas:
@@ -91,7 +113,7 @@ def _punctuation_parts(labels, parts, text):
             height = float(np.percentile([s[3] for s in body], 75))
             baseline = float(np.median([s[1]+s[3] for s in body if s[3] >= height*.8]))
             tails = [label for label, (x, y, w, h, area) in parts if label not in ignored
-                     and .15*height <= h <= .52*height and w <= .32*height
+                     and .15*height <= h <= .52*height and w <= .4*height
                      and y >= baseline-.3*height and baseline+.05*height <= y+h <= baseline+.3*height]
             # More candidates than OCR commas means the glyph mapping is unclear.
             if len(tails) <= commas:

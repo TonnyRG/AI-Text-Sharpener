@@ -120,7 +120,7 @@ systemctl --user stop ai-text-sharpener
 
 ## 开发与验证
 
-渲染测试需要 fontconfig、拉丁字体及覆盖中文的字体。Ubuntu / GitHub Actions 使用 `fontconfig fonts-liberation fonts-noto-cjk`；可先运行 `sudo apt-get install -y fontconfig fonts-liberation fonts-noto-cjk`。测试不依赖个人安装的商业字体。
+渲染测试需要 fontconfig、拉丁字体及覆盖中文的字体。Ubuntu / GitHub Actions 使用 `fontconfig fonts-liberation fonts-noto-cjk fonts-noto-core fonts-dejavu-core fonts-crosextra-carlito`，可通过 `sudo apt-get install -y` 安装这些软件包。数字标点回归覆盖多种明确指定的字体，避免候选排序掩盖字形差异；测试不依赖个人安装的商业字体。
 
 ```bash
 .venv/bin/python -m pip install -e '.[dev]'

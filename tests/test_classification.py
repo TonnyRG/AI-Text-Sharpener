@@ -10,7 +10,7 @@ import resvg_py
 from PIL import Image
 
 from ai_text_sharpener import classification as c
-from ai_text_sharpener.typography import candidate_fonts, outline_layout, svg_document
+from ai_text_sharpener.typography import candidate_fonts, font_catalog, outline_layout, svg_document
 
 
 @pytest.mark.parametrize('text',['LC-MS','m/z','70%–130%','MS/MS fragments','Nature Methods','质谱 LC-MS 分析','10 mg/mL',
@@ -45,7 +45,29 @@ def test_numeric_label_does_not_erase_formula_or_malformed_grouping(text):
 def test_rendered_numeric_punctuation_does_not_create_script_structure(text, size):
     for fid in candidate_fonts(text, 7)[::3]:
         image, region = sample(text, font_id=fid, font_size=size)
-        assert c.structure(image, region) == {'fraction': False, 'scripts': False}
+        assert c.structure(image, region) == {'fraction': False, 'scripts': False}, font_catalog()[fid]['label']
+
+
+def installed_face(family, style):
+    matches = [f['id'] for f in font_catalog().values() if f['family'] == family and f['style'] == style]
+    if not matches:
+        pytest.skip(f'{family} {style} is not installed')
+    return matches[0]
+
+
+@pytest.mark.parametrize('family,style', [
+    ('Liberation Sans', 'Bold'), ('Liberation Serif', 'Regular'), ('Liberation Serif', 'Bold Italic'),
+    ('Liberation Mono', 'Regular'), ('Carlito', 'Bold'), ('Noto Sans', 'Italic'),
+    ('DejaVu Sans', 'Bold'), ('DejaVu Serif', 'Bold'),
+])
+@pytest.mark.parametrize('size', [24, 36, 54])
+def test_numeric_structure_across_explicit_system_fonts(family, style, size):
+    # Candidate ranking depends on installed fonts. These explicit faces cover
+    # serif comma tails, slanted stems, joined percent rings, and ring/dash joins.
+    fid = installed_face(family, style)
+    for text in ['6,738', '100%', '12.5%', '70%–130%']:
+        image, region = sample(text, font_id=fid, font_size=size)
+        assert c.structure(image, region) == {'fraction': False, 'scripts': False}, (family, style, size, text)
 
 
 @pytest.mark.parametrize('text', ['6,738', '100%', '100％', '$6,738', '−12.5', '6738'])
@@ -58,8 +80,8 @@ def test_confident_numeric_labels_bypass_both_recognizers(text):
     assert result == [region]
 
 
-def script_sample(text='100%', *, subscript=False):
-    image, region = sample(text)
+def script_sample(text='100%', *, subscript=False, font_id=None):
+    image, region = sample(text, font_id=font_id)
     base = outline_layout(region['font_id'], text, 36, 0)
     script = outline_layout(region['font_id'], '2', 18, 0)
     script_x, script_y = 30+base['width']+2, 30+(base['height']-3 if subscript else -5)
@@ -85,6 +107,13 @@ def test_percent_transcript_without_percent_ink_does_not_hide_a_script():
     image, region = script_sample('100')
     region['text'] = '100%'
     assert c.structure(image, region)['scripts']
+
+
+@pytest.mark.parametrize('family,style', [('Noto Sans', 'Italic'), ('DejaVu Serif', 'Bold')])
+@pytest.mark.parametrize('subscript', [False, True])
+def test_joined_percent_ring_preserves_genuine_script_anchor(family, style, subscript):
+    image, region = script_sample('100%', subscript=subscript, font_id=installed_face(family, style))
+    assert c.structure(image, region)['scripts'], (family, style, subscript)
 
 
 def test_numeric_ocr_does_not_hide_stacked_fraction():
