@@ -669,16 +669,17 @@ async function watchJob(id, before=null) {
 function download(url){const a=document.createElement('a');a.href=url;a.download='';document.body.append(a);a.click();a.remove();}
 async function upload(files){
   if(!files.length||busy)return;await flush();setBusy(true);
+  $('jobBar').hidden=false;$('cancelBtn').hidden=true;$('progress').removeAttribute('value');
   try{
     let pid=newImport?null:project?.id;newImport=false;let firstNew=null;
     for(const file of files){
-      toast(`正在导入 ${file.name}…`);
+      $('jobMessage').textContent=`正在导入 ${file.name}…`;
       const response=await fetch('/api/import'+(pid?`?project=${pid}`:''),{method:'POST',headers:{'X-Studio-Token':token,'X-Filename':encodeURIComponent(file.name)},body:file});
       const data=await response.json();if(!response.ok)throw new Error(data.error);
       const oldCount=pid&&project?project.pages.length:0;project=data;pid=data.id;firstNew??=data.pages[oldCount]?.id;
     }
     await refreshProjects();await loadProject(pid,firstNew);toast('导入完成');
-  }finally{setBusy(false);$('fileInput').value='';}
+  }finally{$('jobBar').hidden=true;$('cancelBtn').hidden=false;$('progress').value=0;setBusy(false);$('fileInput').value='';}
 }
 $('fileInput').onchange=safeRun(()=>upload([...$('fileInput').files]));
 for(const id of ['importBtn','welcomeImport'])$(id).onclick=()=>{newImport=false;$('fileInput').click();};

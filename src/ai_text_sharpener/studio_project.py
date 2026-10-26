@@ -17,8 +17,9 @@ from pathlib import Path
 import numpy as np
 import resvg_py
 from lxml import etree
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 
+from .ppt_raster import render_pptx_pages
 from .geometry import normalize_style
 from .fidelity import erase_regions, automatic_fit_failure
 from .formula import formula_layout, overlaps
@@ -115,7 +116,7 @@ class StudioStore:
 
 def image_inputs(data: bytes, filename: str):
     if filename.lower().endswith(".pptx"):
-        return extract_image_slides(data)
+        return extract_image_slides(data, render_complex=True)
     with Image.open(io.BytesIO(data)) as im:
         if im.width * im.height > MAX_PIXELS:
             raise ValueError("图片超过 4000 万像素。")
@@ -123,49 +124,77 @@ def image_inputs(data: bytes, filename: str):
         return [(Path(filename).stem, im.copy())]
 
 
-def extract_image_slides(data: bytes):
-    """Extract single full-bleed raster slides without resampling their pixels.
+class NeedsSlideRendering(ValueError):
+    """The page is valid but cannot be imported by extracting one raster."""
 
-    Allow up to one source pixel of edge mismatch from aspect-fit rounding.
-    Refuse composed decks instead of silently losing native text or drawings.
+
+def _extract_slide_image(deck, slide, number):
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    if len(slide.shapes) != 1 or slide.shapes[0].shape_type != MSO_SHAPE_TYPE.PICTURE:
+        raise NeedsSlideRendering(f"第 {number} 页不是单张铺满图片，需要渲染页面。")
+    shape = slide.shapes[0]
+    if (shape.rotation or
+        any(abs(v) > .00001 for v in (shape.crop_left, shape.crop_right, shape.crop_top, shape.crop_bottom)) or
+        shape._element.xpath('.//a:xfrm[@flipH="1" or @flipV="1" or @flipH="true" or @flipV="true"]')):
+        raise NeedsSlideRendering(f"第 {number} 页包含裁剪、旋转或非铺满图片，需要渲染页面。")
+    if shape._element.xpath('.//*[local-name()="svgBlip"]'):
+        raise NeedsSlideRendering(f"第 {number} 页是矢量图片，需要渲染页面。")
+    # Image adjustments, shape masks, outlines and effects change what is seen.
+    # The plain template's empty effect/style references do not alter pixels.
+    if (shape._element.xpath('.//a:blip/* | .//a:effectLst/* | .//a:effectDag | .//a:custGeom | .//a:ln') or
+        shape._element.xpath('.//a:effectRef[@idx!="0"] | .//a:lnRef[@idx!="0"]') or
+        shape._element.xpath('.//a:prstGeom[@prst!="rect"]')):
+        raise NeedsSlideRendering(f"第 {number} 页包含图片效果，需要渲染页面。")
+    try:
+        image = Image.open(io.BytesIO(shape.image.blob))
+    except (UnidentifiedImageError, ValueError) as exc:
+        # EMF/WMF and other Office pictures may have no Pillow decoder.
+        raise NeedsSlideRendering(f"第 {number} 页图片需要渲染。") from exc
+    with image:
+        if image.width * image.height > MAX_PIXELS:
+            raise ValueError(f"第 {number} 页图片过大。")
+        tolerance_x = deck.slide_width / image.width
+        tolerance_y = deck.slide_height / image.height
+        if (abs(shape.left) > tolerance_x or abs(shape.top) > tolerance_y or
+            abs(shape.left + shape.width - deck.slide_width) > tolerance_x or
+            abs(shape.top + shape.height - deck.slide_height) > tolerance_y):
+            raise NeedsSlideRendering(f"第 {number} 页图片未铺满（边缘偏差超过 1 像素），需要渲染页面。")
+        image.load()
+        if abs(image.width / image.height - deck.slide_width / deck.slide_height) > .015:
+            raise NeedsSlideRendering(f"第 {number} 页图片被拉伸，需要渲染页面。")
+        if (("A" in image.getbands() or "transparency" in image.info) and
+            image.convert("RGBA").getextrema()[3][0] < 255):
+            raise NeedsSlideRendering(f"第 {number} 页图片含透明背景，需要渲染页面。")
+        return image.copy()
+
+
+def extract_image_slides(data: bytes, *, render_complex=False):
+    """Keep full-bleed raster pixels; optionally render other pages locally.
+
+    Up to one source pixel of edge mismatch is allowed for aspect-fit rounding.
+    The strict default remains useful to callers needing extraction only.
     """
     from pptx import Presentation
-    from pptx.enum.shapes import MSO_SHAPE_TYPE
     with zipfile.ZipFile(io.BytesIO(data)) as package:
         if sum(info.file_size for info in package.infolist()) > 500_000_000:
             raise ValueError("PPTX 解压后过大。")
     deck = Presentation(io.BytesIO(data))
-    results = []
+    results, complex_pages = [], []
     for number, slide in enumerate(deck.slides, 1):
-        if len(slide.shapes) != 1 or slide.shapes[0].shape_type != MSO_SHAPE_TYPE.PICTURE:
-            raise ValueError(f"第 {number} 页不是单张铺满图片。请将复杂 PPT 导出为 PNG/JPG 后导入。")
-        shape = slide.shapes[0]
-        if (shape.rotation or
-            any(abs(v) > .00001 for v in (shape.crop_left, shape.crop_right, shape.crop_top, shape.crop_bottom)) or
-            shape._element.xpath('.//a:xfrm[@flipH="1" or @flipV="1"]')):
-            raise ValueError(f"第 {number} 页包含裁剪、旋转或非铺满图片，请先导出该页为 PNG。")
-        # SVG pictures carry a raster fallback: extracting just that fallback
-        # would lose precision, so ask for an explicitly rendered input.
-        if shape._element.xpath('.//*[local-name()="svgBlip"]'):
-            raise ValueError(f"第 {number} 页是矢量图片，请使用原始 PNG/JPG 输入。")
-        with Image.open(io.BytesIO(shape.image.blob)) as image:
-            if image.width * image.height > MAX_PIXELS:
-                raise ValueError(f"第 {number} 页图片过大。")
-            # EMU-only tolerances rejected aspect-fit images with invisible,
-            # subpixel margins. Check each edge at the source image resolution;
-            # a fixed percentage would admit visible borders on large images.
-            tolerance_x = deck.slide_width / image.width
-            tolerance_y = deck.slide_height / image.height
-            if (abs(shape.left) > tolerance_x or abs(shape.top) > tolerance_y or
-                abs(shape.left + shape.width - deck.slide_width) > tolerance_x or
-                abs(shape.top + shape.height - deck.slide_height) > tolerance_y):
-                raise ValueError(f"第 {number} 页图片未铺满（边缘偏差超过 1 像素），请先导出该页为 PNG。")
-            image.load()
-            if abs(image.width / image.height - deck.slide_width / deck.slide_height) > .015:
-                raise ValueError(f"第 {number} 页图片被拉伸，请先导出为 PNG。")
-            results.append((f"第 {number} 页", image.copy()))
+        try:
+            image = _extract_slide_image(deck, slide, number)
+        except NeedsSlideRendering:
+            if not render_complex:
+                raise
+            image = None
+            complex_pages.append(number)
+        results.append((f"第 {number} 页", image))
     if not results:
         raise ValueError("PPTX 没有页面。")
+    if complex_pages:
+        rendered = render_pptx_pages(data, len(results), complex_pages)
+        for number in complex_pages:
+            results[number - 1] = (f"第 {number} 页", rendered[number])
     return results
 
 
