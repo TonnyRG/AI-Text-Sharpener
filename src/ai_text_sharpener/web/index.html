@@ -63,6 +63,10 @@
           <button data-align="top">顶端对齐</button><button data-align="centerY">垂直居中</button><button data-align="bottom">底端对齐</button>
           <button data-align="distributeX">横向等间距</button><button data-align="distributeY">纵向等间距</button>
         </div>
+        <div class="section-body batch-rotation">
+          <label class="field">角度 <span>°</span><input id="batchRotationField" type="number" min="-180" max="180" step="any" value="0" aria-label="批量旋转角度"></label>
+          <button id="applyBatchRotationBtn" title="将选中文字各自设为此角度；0° 为水平，跳过锁定及保留原图区域">应用角度</button>
+        </div>
       </details>
       <details class="property-section" open>
         <summary><span>批量字体与样式</span></summary>

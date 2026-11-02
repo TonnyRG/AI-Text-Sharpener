@@ -45,3 +45,30 @@ test('invalid values and unknown fonts cannot create partial patches',()=>{
 test('planning itself never mutates the selection, allowing preflight and atomic undo',()=>{
   const rs=sample(),before=structuredClone(rs);B.plan(rs,'font_size',36);assert.deepEqual(rs,before);
 });
+
+test('batch rotation levels individual frames without moving source bounds or changing typography',()=>{
+  const rs=sample();rs[0].rotation=1.3;rs[1].rotation=-.7;rs[4].rotation=2.5;
+  rs[0].source_quad=[[5,15],[185,15],[185,65],[5,65]];
+  rs[0].color_mode='multi';rs[0].color_runs=[{start:0,end:2,color:'#ff0000'}];
+  const before=structuredClone(rs),result=B.plan(rs,'rotation','0');
+  assert.deepEqual(result.changes.map(c=>c.id),['a','b','math']);
+  assert.deepEqual(rs,before,'Planning is atomic and does not mutate regions');
+  for(const {id,patch} of result.changes){
+    const r=rs.find(r=>r.id===id);Object.assign(r,patch);
+    assert.equal(r.rotation,0);assert.equal(r.fit_status,'edited');assert.equal(r.alignment_adjustment,null);
+  }
+  for(let i=0;i<rs.length;i++)for(const key of ['x','y','bbox','source_rotation','source_quad','text','latex','font_id','font_size','letter_spacing','stroke_width','color','color_runs'])
+    assert.deepEqual(rs[i][key],before[i][key],key);
+  assert.deepEqual(rs[2],before[2]);assert.deepEqual(rs[3],before[3]);
+});
+test('rotation keeps fractional targets and validates the full range before planning changes',()=>{
+  for(const value of [-180,-12.5,.35,180]){
+    const result=B.plan(sample(),'rotation',String(value));
+    assert.equal(result.value,value);assert.ok(result.changes.every(c=>c.patch.rotation===value));
+  }
+  for(const value of ['',NaN,Infinity,-180.01,180.01,'not an angle'])assert.throws(()=>B.plan(sample(),'rotation',value));
+});
+test('horizontal frames, including legacy absent rotation, need no extra undo action',()=>{
+  const rs=[{...base,id:'zero',rotation:0},{...base,id:'legacy'}];delete rs[1].rotation;
+  assert.deepEqual(B.plan(rs,'rotation',0).changes,[]);
+});

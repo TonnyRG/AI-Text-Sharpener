@@ -225,6 +225,7 @@ function select(id, additive=false) {
 function setSelection(ids){
   editGroup=null;selectedIds=[...new Set(ids)];selectedId=selectedIds[0]||null;
   styleReferenceId=selectedId;
+  $('batchRotationField').value='0';
   if(selectedIds.length!==1){editingBox=false;updateBoxButton();}
   renderRegions();renderInspector();updateCanvasHint();
 }
@@ -252,6 +253,8 @@ function updateBatchAvailability(){
   $('preserveSelectedBtn').textContent=count?`保留选中原图 · ${count}`:'保留选中原图';
   $('preserveSelectedBtn').title=regions.some(r=>r.locked)?'锁定区域不参与修改':'';
   const alignable=CanvasGeometry.alignmentTargets(regions).length;
+  for(const id of ['batchRotationField','applyBatchRotationBtn'])
+    $(id).disabled=busy||selection().length<2||!BatchStyle.targets(regions,'rotation').length;
   for(const button of $('batchAlignment').querySelectorAll('button')){
     button.disabled=busy||mode==='original'||alignable<(button.dataset.align.startsWith('distribute')?3:2)||
       CanvasGeometry.alignmentTargets(regions).some(r=>!liveLayers.has(r.id));
@@ -332,6 +335,10 @@ $('batchColorField').oninput=safeRun(()=>applyBatchStyle('color',$('batchColorFi
 $('batchColorText').oninput=safeRun(()=>{const color=$('batchColorText').value.trim();if(/^#[0-9a-f]{6}$/i.test(color))return applyBatchStyle('color',color,'batchColor');});
 $('batchColorText').onchange=safeRun(()=>{const color=$('batchColorText').value.trim();if(color)return applyBatchStyle('color',color,'batchColor');});
 $('batchColorText').onkeydown=e=>{if(e.key==='Enter')e.currentTarget.blur();};
+$('applyBatchRotationBtn').onclick=safeRun(()=>applyBatchStyle('rotation',$('batchRotationField').value,null));
+$('batchRotationField').onkeydown=e=>{
+  if(e.key==='Enter'&&!e.ctrlKey&&!e.metaKey&&!e.isComposing){e.preventDefault();$('applyBatchRotationBtn').click();}
+};
 for(const button of $('batchAlignment').querySelectorAll('button'))button.onclick=safeRun(()=>{
   if(busy||mode==='original')return;
   const changes=CanvasGeometry.alignSelection(selectedRegions(),button.dataset.align);

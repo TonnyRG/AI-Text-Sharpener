@@ -1,8 +1,8 @@
 /* Shared batch-style rules: only the explicitly edited property is changed. */
 (function(root){
   'use strict';
-  const defaults={font_id:'',font_size:48,letter_spacing:0,stroke_width:0,color:'#182029'};
-  const limits={font_size:[4,1000],letter_spacing:[-300,300],stroke_width:[0,12]};
+  const defaults={font_id:'',font_size:48,letter_spacing:0,stroke_width:0,color:'#182029',rotation:0};
+  const limits={font_size:[4,1000],letter_spacing:[-300,300],stroke_width:[0,12],rotation:[-180,180]};
   function targets(regions,key){
     return regions.filter(r=>r.enabled&&!r.locked&&(!['font_id','letter_spacing'].includes(key)||r.kind!=='formula'));
   }
@@ -16,7 +16,7 @@
       if(value===''||!Number.isFinite(Number(value)))throw new Error('请输入有效数值。');
       value=Number(value);const [min,max]=limits[key];
       if(value<min||value>max)throw new Error(`数值必须在 ${min}–${max} 之间。`);
-      if(key!=='stroke_width')value=Math.sign(value)*Math.floor(Math.abs(value)+.5);
+      if(['font_size','letter_spacing'].includes(key))value=Math.sign(value)*Math.floor(Math.abs(value)+.5);
     }else if(key==='font_id'){
       if(!font||font.id!==value)throw new Error('请选择本机字体。');
     }else{
@@ -27,6 +27,7 @@
     for(const r of targets(regions,key)){
       if((r[key]??defaults[key])===value&&!(key==='color'&&r.color_mode==='multi'))continue;
       const patch={[key]:value,score:null,fit_status:'edited',alternatives:[],reviewed_signature:null};
+      if(key==='rotation')patch.alignment_adjustment=null;
       if(key==='font_id')patch.font_label=font.label;
       if(key==='color')Object.assign(patch,{color_mode:'single',color_source:'manual',color_runs:[],color_text:'',color_note:'已批量统一颜色。'});
       changes.push({id:r.id,patch});
