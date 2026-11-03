@@ -270,6 +270,51 @@ def automatic_fit_failure(region, layout):
     return None
 
 
+def _erasure_mask(evidence, radius):
+    """Cover faint blur attached to text without widening every erased stroke.
+
+    Fitting needs the strong glyph shape; erasure also needs its soft fringe.
+    Estimate the noise away from the glyphs and grow only connected, weak
+    residuals within a small distance. Keep excluded neighboring glyphs out.
+    """
+    binary = evidence['binary']
+    base = cv2.dilate(binary, np.ones((radius*2+1, radius*2+1), np.uint8))
+    reach = radius + max(3, min(5, radius*2+1))
+    nearby = cv2.dilate(binary, np.ones((reach*2+1, reach*2+1), np.uint8))
+    residual = np.linalg.norm(evidence['patch']-evidence['background'], axis=2)
+    quiet = residual[nearby == 0]
+    # A tight crop or a poor plane fit provides no reliable fringe evidence.
+    if quiet.size < max(20, binary.size*.05):
+        return base
+    noise = float(np.percentile(quiet, 90))
+    strength = float(np.percentile(residual, 99))
+    if noise > max(6., strength*.08):
+        return base
+    threshold = max(3.5, noise*1.5)
+    weak = (nearby > 0) & (residual > threshold) & (residual < strength*.6)
+    # Reconstruct the unfiltered mask only to protect components deliberately
+    # removed by the single-line / badge filters, never to add new text seeds.
+    normalized = np.clip(residual/max(strength, 1e-6), 0, 1)
+    _, raw = cv2.threshold((normalized*255).astype(np.uint8), 0, 255,
+                           cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    excluded = np.uint8((raw > 0) & (binary == 0))*255
+    protected = cv2.dilate(excluded, np.ones((radius*2+1, radius*2+1), np.uint8))
+    weak &= protected == 0
+    _, labels = cv2.connectedComponents(np.uint8(weak | (base > 0)), connectivity=8)
+    attached = np.unique(labels[base > 0])
+    attached = attached[attached != 0]
+    # A blur fringe should fade out before the distance limit. Residuals that
+    # continue across it may be a curved gradient or texture missed by the
+    # border plane; do not flatten that connected area into the fitted color.
+    inner = cv2.erode(nearby, np.ones((3, 3), np.uint8),
+                      borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    uncertain = np.unique(labels[weak & (nearby > 0) & (inner == 0)])
+    attached = np.setdiff1d(attached, uncertain)
+    result = base.copy()
+    result[np.isin(labels, attached)] = 255
+    return result
+
+
 def erase_regions(image: np.ndarray, regions: list[dict]) -> np.ndarray:
     output = image.copy()
     for region in regions:
@@ -288,7 +333,7 @@ def erase_regions(image: np.ndarray, regions: list[dict]) -> np.ndarray:
         ph, pw = ev["patch"].shape[:2]
         x, y = ev["x"], ev["y"]
         radius = max(1, int(round(ph * .045)))
-        mask = cv2.dilate(ev["binary"], np.ones((radius * 2 + 1, radius * 2 + 1), np.uint8))
+        mask = _erasure_mask(ev, radius)
         background = ev["background"].round().astype(np.uint8)
         if transform is not None:
             rotation, origin, _ = transform
