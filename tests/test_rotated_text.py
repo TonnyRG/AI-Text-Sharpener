@@ -98,9 +98,9 @@ def test_detection_keeps_line_direction_and_enables_rotated_text(monkeypatch,tmp
     recognize.text_cls=lambda crops:SimpleNamespace(cls_res=[('180' if flip else '0',.99)])
     recognize.text_cls.cls_thresh=.9
     monkeypatch.setattr(studio,'ocr_engine',lambda:recognize)
-    monkeypatch.setattr(studio,'detect_formulas',lambda im:[])
     path=tmp_path/'input.png';Image.fromarray(image).save(path)
     result=studio.detect_regions(path)[0]
+    assert result['kind']=='text'
     assert result['enabled']
     assert abs((result['source_rotation']-angle+180)%360-180)<.1
     assert result['rotation']==result['source_rotation']

@@ -28,10 +28,9 @@ from PIL import Image, ImageFilter
 from .colors import recover_colors
 from .alignment import align_page
 from .style_consistency import normalize_page
-from .classification import resolve_types
 from .geometry import source_frame
 from .fidelity import crop_evidence, fit_region
-from .formula import detect_formulas, fit_formula, recognize_formula, formula_available
+from .formula import fit_formula, recognize_formula
 from .studio_project import StudioStore, compose_page, export_pages, image_inputs, render_page, validate_regions
 from .studio_files import default_export_directory, directory_contents, export_destination, save_export, remember_directory
 from .typography import candidate_fonts, font_catalog, outline_layout, svg_document
@@ -49,15 +48,13 @@ def ocr_engine():
 
 
 def detect_regions(image_path: Path, progress=None):
+    """Recognize every region as plain text; formula routing is a user choice."""
     if progress:
         progress("正在本机识别中英文文字…")
     engine = ocr_engine()
     result = engine(str(image_path), return_word_box=True, use_det=True, use_cls=True, use_rec=True)
     regions = []
     image = np.asarray(Image.open(image_path).convert("RGB"))
-    if progress:
-        progress("正在检测完整公式区域…")
-    formulas = detect_formulas(image)
     # RapidOCR exposes corrected text but not its 180-degree classification in
     # the combined result. Recover that direction from the same line crops.
     from rapidocr.utils.process_img import get_rotate_crop_image
@@ -84,7 +81,7 @@ def detect_regions(image_path: Path, progress=None):
             angle=0
         ids = candidate_fonts(text, limit=1)
         enabled = bool(ids) and float(score) >= .80
-        region = {"id": uuid.uuid4().hex[:12], "text": text, "original_text": text,
+        region = {"id": uuid.uuid4().hex[:12], "kind": "text", "text": text, "original_text": text,
                   "bbox": [max(0, float(x0)-3), max(0, float(y0)-3), float(x1-x0)+6, float(y1-y0)+6],
                   "x": float(x0), "y": float(y0), "font_id": ids[0] if ids else "",
                   "font_size": max(4, min(1000, round(float(np.linalg.norm(points[3]-points[0]))))), "letter_spacing": 0,
@@ -99,8 +96,7 @@ def detect_regions(image_path: Path, progress=None):
         regions.append(region)
     if len(regions) > 500:
         raise ValueError("文字区域超过 500 个，请将页面拆分后处理。")
-    return resolve_types(image, regions, formulas, engine=engine, detect=detect_formulas,
-                         recognize=recognize_formula, fit_math=fit_formula, progress=progress)
+    return regions
 
 
 def restore_plain_text(image, region):
@@ -406,26 +402,14 @@ class Studio:
         image = np.asarray(Image.open(directory / f"{page['id']}.png").convert("RGB"))
         if payload["kind"] == "analyze":
             page["regions"] = detect_regions(directory / f"{page['id']}.png", progress)
-            formulas = [r for r in page["regions"] if r.get("kind") == "formula"]
-            for index, region in enumerate(formulas):
-                if region.get('type_decision'):
-                    continue  # Both candidates were already checked during detection.
-                progress(f"识别公式 {index+1}/{len(formulas)} · 暂保留原图供核对", 5)
-                try:
-                    region["latex"] = recognize_formula(image, region)
-                    region.update(fit_formula(image, region))
-                except ValueError as exc:
-                    region.update(enabled=False, fit_status="preserved", fit_note=str(exc))
-                    self.job["warnings"].append(f"{page['name']} · 公式：{exc}")
         selected = [r for r in page["regions"] if r.get("kind") != "formula" and r.get("enabled", True) and not r.get("locked")
                     and (not payload.get("region_id") or r["id"] == payload["region_id"])]
         for idx, region in enumerate(selected):
             percent = 10 + idx / max(1, len(selected)) * 80
             progress(f"拟合文字 {idx+1}/{len(selected)} · {region['text'][:25]}", percent)
             try:
-                if not (payload['kind']=='analyze' and region.get('type_decision',{}).get('choice')=='text'):
-                    region.update(fit_region(image, region, payload.get("font_ids"),
-                        lambda msg: progress(f"{idx+1}/{len(selected)} · {msg}", percent)))
+                region.update(fit_region(image, region, payload.get("font_ids"),
+                    lambda msg: progress(f"{idx+1}/{len(selected)} · {msg}", percent)))
                 if region.get("enabled") and region.get("color_source") != "manual":
                     try:
                         region.update(recover_colors(image, region))
@@ -482,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/boot":
                 self.send_data({"token": self.app.token, "version": "0.4.0", "projects": self.app.store.listing(),
                                 "fonts": [{k: v for k, v in f.items() if k not in {"path", "index"}} for f in font_catalog().values()],
-                                "data_dir": str(self.app.store.root), "formula_detection": formula_available(),
+                                "data_dir": str(self.app.store.root), "formula_detection": False,
                                 "export_directory": default_export_directory(self.app.store.root)})
             elif url.path == "/api/project":
                 self.send_data(self.app.store.load(query["id"]))
