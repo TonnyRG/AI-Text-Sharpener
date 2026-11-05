@@ -8,6 +8,8 @@ import math
 import mimetypes
 import re
 import secrets
+import shutil
+import tempfile
 import threading
 import time
 import traceback
@@ -25,6 +27,7 @@ import numpy as np
 import resvg_py
 from PIL import Image, ImageFilter
 
+from .area_scan import conflicts, rescan_area, scan_target
 from .colors import recover_colors
 from .alignment import align_page
 from .style_consistency import normalize_page
@@ -47,18 +50,22 @@ def ocr_engine():
                             "Global.log_level": "warning"})
 
 
-def detect_regions(image_path: Path, progress=None):
+def detect_regions(image_path: Path | np.ndarray, progress=None):
     """Recognize every region as plain text; formula routing is a user choice."""
     if progress:
         progress("正在本机识别中英文文字…")
     engine = ocr_engine()
-    result = engine(str(image_path), return_word_box=True, use_det=True, use_cls=True, use_rec=True)
+    if isinstance(image_path, np.ndarray):
+        image = image_path
+    else:
+        with Image.open(image_path) as source:
+            image = np.asarray(source.convert("RGB"))
+    bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    result = engine(bgr, return_word_box=True, use_det=True, use_cls=True, use_rec=True)
     regions = []
-    image = np.asarray(Image.open(image_path).convert("RGB"))
     # RapidOCR exposes corrected text but not its 180-degree classification in
     # the combined result. Recover that direction from the same line crops.
     from rapidocr.utils.process_img import get_rotate_crop_image
-    bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     boxes = result.boxes if result.boxes is not None else []
     crops = [get_rotate_crop_image(bgr, np.asarray(box,dtype=np.float32)) for box in boxes]
     directions = engine.text_cls(crops).cls_res if crops else []
@@ -217,7 +224,7 @@ class Studio:
             self.ensure_idle()
             payload = dict(payload, _destination=None)
             kind = payload.get("kind")
-            if kind not in {"analyze", "analyze_all", "fit", "render", "export", "formula_recognize", "formula_fit", "text_restore", "colors"}:
+            if kind not in {"analyze", "analyze_all", "analyze_area", "fit", "render", "export", "formula_recognize", "formula_fit", "text_restore", "colors"}:
                 raise ValueError("未知任务。")
             project = self.store.load(payload["project_id"])
             if payload.get("revision") != project["revision"]:
@@ -227,6 +234,8 @@ class Studio:
                 raise ValueError("页面不存在。")
             if not project["pages"]:
                 raise ValueError("项目没有页面，请先导入 PPTX 或图片。")
+            if kind == "analyze_area":
+                scan_target(payload, page)
             if kind == "colors":
                 if payload.get("scope", "current") not in {"current", "all"}:
                     raise ValueError("无效颜色提取范围。")
@@ -287,14 +296,15 @@ class Studio:
                     prefix = f"第 {index+1}/{total} 页"
                     progress(prefix, index / total * 100)
                     # Keep existing edits and resume only unfinished pages.
-                    if not original.get("pending_rescan") and (original.get("status") == "review" or original["regions"]):
+                    supplement = original.get("status") == "partial" and not original.get("pending_rescan")
+                    if not supplement and not original.get("pending_rescan") and (original.get("status") == "review" or original["regions"]):
                         skipped += 1
                         continue
                     working = deepcopy(original)
                     def page_progress(message, value=0):
                         progress(f"{prefix} · {message}", (index + value / 100) / total * 100)
                     try:
-                        self._fit_page(dict(payload, kind="analyze"), directory, working, page_progress)
+                        self._fit_page(dict(payload, kind="analyze"), directory, working, page_progress, supplement=supplement)
                         page_progress("生成预览", 95)
                         render_page(directory, working)
                         working["render_revision"] = project["revision"] + 1
@@ -305,7 +315,7 @@ class Studio:
                     except InterruptedError:
                         raise
                     except Exception as exc:
-                        original.update(status="error", error=str(exc))
+                        original.update(status="partial" if supplement else "error", error=str(exc))
                         self.job["warnings"].append(f"{prefix}失败：{exc}")
                         failed += 1
                     with self.lock:
@@ -340,6 +350,9 @@ class Studio:
                     self.store.save(project)
                     self.job.update(active=False, status="done", progress=100,
                                     message=f"已检查 {len(targets)} 页，恢复 {changed} 处多色文字；锁定区域与手动配色已保留。")
+                return
+            if kind == "analyze_area":
+                self._analyze_area(payload, project, page, directory, progress)
                 return
             if kind == "text_restore":
                 region = next((r for r in page['regions'] if r['id']==payload.get('region_id')), None)
@@ -398,17 +411,55 @@ class Studio:
                 message = f"文件操作失败，请检查文件夹是否可用及写入权限：{exc}" if isinstance(exc, OSError) else str(exc)
                 self.job.update(active=False, status="error", message=message)
 
-    def _fit_page(self, payload, directory, page, progress):
-        image = np.asarray(Image.open(directory / f"{page['id']}.png").convert("RGB"))
-        if payload["kind"] == "analyze":
-            page["regions"] = detect_regions(directory / f"{page['id']}.png", progress)
-        selected = [r for r in page["regions"] if r.get("kind") != "formula" and r.get("enabled", True) and not r.get("locked")
-                    and (not payload.get("region_id") or r["id"] == payload["region_id"])]
+    def _analyze_area(self, payload, project, page, directory, progress):
+        with Image.open(directory / f"{page['id']}.png") as source:
+            image = np.asarray(source.convert("RGB"))
+        regions, detected = rescan_area(detect_regions, image, page, payload, progress)
+        self._fit_regions(image, [r for r in detected if r["enabled"]], page["name"], progress, strict=True)
+        if page["status"] != "review" and not page.get("pending_rescan"):
+            page["status"] = "partial"
+        page["regions"] = regions
+        progress("正在生成局部识别预览…", 94)
+        # compose_page annotates layout sizes. Only new OCR records may change.
+        rendered = deepcopy(page)
+        with tempfile.TemporaryDirectory(dir=directory) as tmp:
+            staged = Path(tmp)
+            render_page(directory, rendered, output_directory=staged)
+            new_ids = {r["id"] for r in detected}
+            page["regions"] = [after if before["id"] in new_ids else before
+                               for before, after in zip(regions, rendered["regions"])]
+            files = [directory / f"{page['id']}-result.{ext}" for ext in ("svg", "png")]
+            for path in files:
+                if path.exists():
+                    shutil.copyfile(path, staged / (path.name + ".old"))
+            with self.lock:
+                progress("保存局部识别结果…", 99)
+                installed = []
+                try:
+                    for path in files:
+                        (staged / path.name).replace(path)
+                        installed.append(path)
+                    project["revision"] += 1
+                    page["render_revision"] = project["revision"]
+                    self.store.save(project)
+                except OSError:
+                    for path in installed:
+                        backup = staged / (path.name + ".old")
+                        if backup.exists():
+                            backup.replace(path)
+                        else:
+                            path.unlink(missing_ok=True)
+                    raise
+                self.job.update(active=False, status="done", progress=100,
+                                message=f"局部识别完成，共 {len(detected)} 处文字。",
+                                result_region_ids=[r["id"] for r in detected])
+
+    def _fit_regions(self, image, selected, page_name, progress, font_ids=None, *, strict=False):
         for idx, region in enumerate(selected):
             percent = 10 + idx / max(1, len(selected)) * 80
             progress(f"拟合文字 {idx+1}/{len(selected)} · {region['text'][:25]}", percent)
             try:
-                region.update(fit_region(image, region, payload.get("font_ids"),
+                region.update(fit_region(image, region, font_ids,
                     lambda msg: progress(f"{idx+1}/{len(selected)} · {msg}", percent)))
                 if region.get("enabled") and region.get("color_source") != "manual":
                     try:
@@ -416,18 +467,41 @@ class Studio:
                     except ValueError:
                         pass  # Color recovery must not invalidate a usable monochrome fit.
             except ValueError as exc:
+                if strict:
+                    raise
                 region.update(enabled=False, fit_status="preserved", fit_note=str(exc))
-                self.job["warnings"].append(f"{page['name']} · {region['text'][:20]}：{exc}")
-        if payload['kind'] == 'analyze':
+                self.job["warnings"].append(f"{page_name} · {region['text'][:20]}：{exc}")
+
+    def _fit_page(self, payload, directory, page, progress, *, supplement=False):
+        source = directory / f"{page['id']}.png"
+        with Image.open(source) as original:
+            image = np.asarray(original.convert("RGB"))
+        analyze = payload["kind"] == "analyze"
+        candidates = page["regions"]
+        if analyze:
+            candidates = detect_regions(source, progress)
+            if supplement:
+                # Complete an area-only page without overwriting its local edits.
+                candidates = [r for r in candidates if not conflicts(r, page["regions"])]
+                if len(page["regions"]) + len(candidates) > 500:
+                    raise ValueError("本页文字区域超过 500 个。")
+                page["regions"].extend(candidates)
+            else:
+                page["regions"] = candidates
+        selected = [r for r in candidates if r.get("kind") != "formula" and r.get("enabled", True) and not r.get("locked")
+                    and (not payload.get("region_id") or r["id"] == payload["region_id"])]
+        self._fit_regions(image, selected, page["name"], progress, payload.get("font_ids"))
+        if analyze and not supplement:
             progress('校正相近字号…', 90)
             normalize_page(image, page['regions'])
             progress('校正文字对齐…', 92)
             align_page(image, page['regions'])
         if not page["regions"]:
             self.job["warnings"].append(f"{page['name']}：未检测到文字，原图已保留。")
-        page["status"] = "review"
+        if analyze or page["status"] != "partial":
+            page["status"] = "review"
         page.pop("error", None)
-        if payload["kind"] == "analyze":
+        if analyze:
             page.pop("pending_rescan", None)
 
 

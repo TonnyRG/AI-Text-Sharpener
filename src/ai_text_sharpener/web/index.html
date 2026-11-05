@@ -38,7 +38,7 @@
     </div>
     <div id="editor" class="editor" hidden>
       <div class="viewbar">
-        <div class="canvas-tools" role="group" aria-label="画布编辑工具"><button id="selectBtn" class="active" aria-pressed="true" title="空白处拖动框选；框内移动、四角缩放、圆点旋转；点击空白取消选择">选择 / 移动</button><button id="drawBtn" aria-pressed="false" title="在原图上框选要重绘的文字">＋ 添加文字</button></div>
+        <div class="canvas-tools" role="group" aria-label="画布编辑工具"><button id="selectBtn" class="active" aria-pressed="true" title="空白处拖动框选；框内移动、四角缩放、圆点旋转；点击空白取消选择">选择 / 移动</button><button id="drawBtn" aria-pressed="false" title="在原图上框选要重绘的文字">＋ 添加文字</button><button id="areaScanBtn" aria-pressed="false" title="在原图上拖出要重新识别的范围">框选识别</button></div>
         <div class="view-tools"><div class="segmented" id="viewModes" role="group" aria-label="画布视图"><button data-mode="original" class="active">原图</button><button data-mode="result">重绘</button></div><button id="peekBtn" title="按住查看原图，松开返回；也可用键盘空格或回车" disabled>按住看原图</button></div>
       </div>
       <div id="viewport" class="viewport"><div id="sheet" class="sheet"><img id="sourceImage" alt="原始图片" draggable="false"><img id="resultImage" alt="文字重绘结果" draggable="false" hidden><div id="liveResult" aria-label="实时重绘结果" hidden></div><svg id="overlay" aria-label="文字区域画布"></svg></div></div>
@@ -104,6 +104,7 @@
         <div class="section-body">
           <label class="field inline-field">区域类型<select id="kindField"><option value="text">普通文字</option><option value="formula">公式</option></select></label>
           <label id="plainTextLabel" class="field">文字内容<textarea id="textField" rows="2" placeholder="输入这一行的正确文字"></textarea></label>
+          <button id="recognizeTextBtn" class="rescan-text" title="从此框的原字范围重新识别并匹配文字">重新识别文字</button>
           <div id="formulaPanel" hidden>
             <label class="field">LaTeX 公式<textarea id="latexField" rows="4" spellcheck="false" placeholder="例如：E=mc^2"></textarea></label>
             <div class="fit-buttons"><button id="recognizeFormulaBtn">重新识别公式</button><button id="fitFormulaBtn">匹配公式位置</button></div>

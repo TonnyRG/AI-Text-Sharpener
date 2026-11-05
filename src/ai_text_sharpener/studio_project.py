@@ -298,12 +298,12 @@ def compose_page(directory: Path, page: dict):
     return svg_document(page["width"], page["height"], "".join(body))
 
 
-def render_page(directory: Path, page: dict):
+def render_page(directory: Path, page: dict, *, output_directory: Path | None = None):
     svg = compose_page(directory, page)
     png = bytes(resvg_py.svg_to_bytes(svg_string=svg))
     # Publish both after successful rendering; no half-written output files.
     for suffix, content in [("svg", svg.encode()), ("png", png)]:
-        path = directory / f"{page['id']}-result.{suffix}"
+        path = (output_directory or directory) / f"{page['id']}-result.{suffix}"
         temp = path.with_suffix(path.suffix + ".tmp")
         temp.write_bytes(content)
         os.replace(temp, path)

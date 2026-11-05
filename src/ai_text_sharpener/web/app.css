@@ -62,7 +62,7 @@ button:focus-visible,summary:focus-visible{outline:2px solid #438d70;outline-off
 .batchbar{row-gap:8px}.batchbar button{padding:6px 10px}
 .canvas-tools{display:flex;align-items:center;gap:3px}.canvas-tools button{font-size:11px;padding:6px 9px;border-color:transparent;background:transparent;white-space:nowrap}
 .canvas-tools button.active{background:#e4eee8;border-color:#bad0c3;color:#176957}
-.viewbar{padding:10px 16px;gap:8px}.view-tools{gap:7px}.view-tools #peekBtn{border-color:transparent;background:transparent;color:#536e60}
+.viewbar{padding:10px 16px;gap:8px;flex-wrap:wrap}.rescan-text{margin-top:6px;font-size:11px}.view-tools{gap:7px}.view-tools #peekBtn{border-color:transparent;background:transparent;color:#536e60}
 .canvas-foot{position:relative;flex-wrap:wrap;padding:9px 16px;gap:8px 14px;background:#fcfdfd;flex-shrink:0}
 .canvas-display,.canvas-zoom{display:flex;align-items:center;gap:10px}.canvas-display label{font-size:10px;color:#657b6f;gap:0}
 .canvas-zoom{margin-left:auto;gap:6px}.canvas-zoom select{width:auto;min-width:90px;font-size:10px;padding:5px 7px}
