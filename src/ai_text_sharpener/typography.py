@@ -21,6 +21,8 @@ from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.ttLib import TTFont
 from PIL import Image
 
+from .inline_math import has_inline_math, mixed_layout, plain_characters, split_inline_math
+
 
 @lru_cache(maxsize=1)
 def font_catalog() -> dict[str, dict]:
@@ -129,19 +131,30 @@ def _glyph(font_id: str, gid: int):
 
 
 @lru_cache(maxsize=1024)
-def outline_layout(font_id: str, text: str, size: float, spacing: float = 0, stroke_width: float = 0, colors: tuple = ()):
+def outline_layout(font_id: str, text: str, size: float, spacing: float = 0, stroke_width: float = 0, colors: tuple = (), *, inline_math=False):
     if colors and (len(colors) != len(text) or any(c is not None and (not isinstance(c, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", c)) for c in colors)):
         raise ValueError("无效的逐字颜色。")
     if font_id not in font_catalog():
         raise ValueError("字体不存在，请重新选择本机字体。")
     if not text or len(text) > 512 or "\n" in text:
         raise ValueError("每个文字区域需为 1–512 个字符的单行文字；多行请分成多个区域。")
-    if not supports(font_id, text):
+    if not supports(font_id, plain_characters(text) if inline_math else text):
         raise ValueError("所选字体缺少部分字符，请选择支持这些字符的字体。")
     if not 4 <= size <= 1000 or not math.isfinite(spacing):
         raise ValueError("字号必须在 4–1000 像素之间。")
     if not math.isfinite(stroke_width) or not 0 <= stroke_width <= 12:
         raise ValueError("笔画加粗必须在 0–12 像素之间。")
+    if inline_math and has_inline_math(text):
+        def shape(value, palette):
+            return _text_layout(font_id, value, size, spacing, stroke_width, palette)
+        return mixed_layout(split_inline_math(text), colors, size, spacing, stroke_width, shape)
+    layout = _text_layout(font_id, text, size, spacing, stroke_width, colors)
+    if not layout["body"]:
+        raise ValueError("该区域没有可见字符。")
+    return layout
+
+
+def _text_layout(font_id, text, size, spacing, stroke_width, colors):
     font = _hb(font_id)
     scale = size / font.face.upem
     buffer = hb.Buffer()
@@ -169,14 +182,16 @@ def outline_layout(font_id: str, text: str, size: float, spacing: float = 0, str
         cursor_y -= pos.y_advance * scale
         if idx + 1 < len(infos) and infos[idx + 1].cluster != info.cluster:
             cursor_x += spacing
+    cluster_count = len({info.cluster for info in infos})
     if not boxes:
-        raise ValueError("该区域没有可见字符。")
+        return {"body": "", "width": 0, "height": 0, "left": 0, "baseline": 0,
+                "advance": cursor_x, "cluster_count": cluster_count, "glyphs": []}
     left, top = min(b[0] for b in boxes), min(b[1] for b in boxes)
     right, bottom = max(b[2] for b in boxes), max(b[3] for b in boxes)
     inset = stroke_width / 2
     body = f'<g transform="translate({-left+inset:.5f} {-top+inset:.5f})">{"".join(shapes)}</g>'
     return {"body": body, "width": right - left + stroke_width, "height": bottom - top + stroke_width,
-            "baseline": -top + inset, "advance": cursor_x,
+            "baseline": -top + inset, "advance": cursor_x, "left": left - inset, "cluster_count": cluster_count,
             "glyphs": [{"start": cluster, "box": [b[0]-left+inset, b[1]-top+inset, b[2]-b[0], b[3]-b[1]]}
                        for cluster, b in zip(clusters, boxes)]}
 
@@ -186,8 +201,9 @@ def svg_document(width: int, height: int, body: str) -> str:
             f'width="{width}" height="{height}" viewBox="0 0 {width} {height}">{body}</svg>')
 
 
-def render_mask(font_id: str, text: str, size: float, spacing: float = 0, stroke_width: float = 0):
-    layout = outline_layout(font_id, text, round(size, 3), round(spacing, 3), round(stroke_width, 3))
+def render_mask(font_id: str, text: str, size: float, spacing: float = 0, stroke_width: float = 0, *, inline_math=False):
+    layout = outline_layout(font_id, text, round(size, 3), round(spacing, 3), round(stroke_width, 3),
+                            inline_math=inline_math)
     width, height = math.ceil(layout["width"]) + 2, math.ceil(layout["height"]) + 2
     if width * height > 20_000_000:
         raise ValueError("文字区域过大，请减小字号。")

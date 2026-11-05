@@ -433,11 +433,15 @@ function changeField(id,key,convert=v=>v) {
     if($(id).type==='number'&&(raw===''||!$(id).checkValidity()&&!(integerStyle&&$(id).validity.stepMismatch&&!$(id).validity.rangeUnderflow&&!$(id).validity.rangeOverflow)))return;
     const value=convert(raw); if(typeof value==='number'&&!Number.isFinite(value))return;
     if(integerStyle)$(id).value=value;
-    if(r[key]===value)return;
+    if(r[key]===value&&(key!=='text'||r.text_format==='inline_math'))return;
     history(['text','latex','font_size','letter_spacing','stroke_width','x','y','rotation','source_rotation'].includes(key)?id:null);r[key]=value;
     if(['text','latex','font_id','font_size','letter_spacing','stroke_width','x','y','rotation','source_rotation'].includes(key)){r.score=null;r.fit_status='edited';r.alternatives=[];$('alternatives').replaceChildren();$('alternativesPanel').hidden=true;}
     if(key==='enabled'){r.preserve_original=!value;if(value)r.fit_status='edited';delete r.reviewed_signature;}
-    if(key==='text'){r.text=r.text.replace(/[\r\n]+/g,' ');r.color_mode='single';r.color_runs=[];r.color_text='';r.color_note='文字内容已改动，请重新设置分色。';renderColorControls();}
+    if(key==='text'){
+      r.text=r.text.replace(/[\r\n]+/g,' ');r.text_format='inline_math';
+      r.color_mode='single';r.color_runs=[];r.color_text='';
+      r.color_note='文字内容已改动，请重新设置分色。';renderColorControls();
+    }
     if(key==='color'){$('colorValue').textContent=value.toUpperCase();r.color_mode='single';r.color_source='manual';r.color_note='已统一整行颜色。';renderColorControls();}
     $('recognizeTextBtn').disabled=busy||!canRescanText(r);
     markDirty();renderRegions();renderFitStatus(r);

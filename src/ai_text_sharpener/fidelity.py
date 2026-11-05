@@ -11,6 +11,7 @@ from copy import deepcopy
 import cv2
 import numpy as np
 
+from .inline_math import plain_characters, region_has_inline_math
 from .typography import candidate_fonts, family_weight_fonts, font_catalog, outline_layout, render_mask, supports
 from .geometry import round_style, rotated_bounds, source_frame, source_position
 
@@ -174,8 +175,10 @@ def _fit_at_angle(image: np.ndarray, region: dict, font_ids=None, progress=None,
     frame, source_box, transform = source_frame(image, region)
     evidence = crop_evidence(frame, source_box, single_line=True, single_glyph=len(text) == 1)
     ix, iy, iw, ih = evidence["ink_box"]
-    ids = font_ids or candidate_fonts(text)
-    ids = [fid for fid in ids if fid in font_catalog() and supports(fid, text)]
+    inline_math = region_has_inline_math(region)
+    font_text = plain_characters(text) if inline_math else text
+    ids = font_ids or candidate_fonts(font_text)
+    ids = [fid for fid in ids if fid in font_catalog() and supports(fid, font_text)]
     if not ids:
         raise ValueError("没有找到覆盖这些字符的字体，请先在系统安装字体。")
     scale = min(1.0, 64 / max(1, ih), 1000 / max(1, iw))
@@ -193,7 +196,7 @@ def _fit_at_angle(image: np.ndarray, region: dict, font_ids=None, progress=None,
         if progress:
             progress(f"匹配字体 {index + 1}/{len(ids)} · {font_catalog()[fid]['label']}")
         try:
-            base = outline_layout(fid, text, 64.0, 0.0)
+            base = outline_layout(fid, text, 64.0, 0.0, inline_math=inline_math)
             estimated_size = max(4, min(1000, (ih-stroke_width) * 64 / max(1, base["height"])))
             best = None
             # Estimate spacing from the actual glyph geometry, then refine size.
@@ -201,11 +204,11 @@ def _fit_at_angle(image: np.ndarray, region: dict, font_ids=None, progress=None,
                      {max(4,min(1000,round_style(estimated_size*factor)+offset))
                       for factor in (.92,.97,1.0,1.035,1.08) for offset in (-1,0,1)})
             for size in sorted(sizes):
-                natural = outline_layout(fid, text, round(size, 3), 0.0, stroke_width)
-                spacing = (iw - natural["width"]) / max(1, len(text) - 1)
-                spacing = float(np.clip(spacing, -size * .12, size * .35)) if len(text) > 1 else 0.0
+                natural = outline_layout(fid, text, round(size, 3), 0.0, stroke_width, inline_math=inline_math)
+                slots = natural.get("spacing_slots", len(text) - 1)
+                spacing = float(np.clip((iw - natural["width"]) / slots, -size * .12, size * .35)) if slots else 0.0
                 size, spacing = round_style(size), round_style(spacing)
-                mask, _ = render_mask(fid, text, size * scale, spacing * scale, stroke_width * scale)
+                mask, _ = render_mask(fid, text, size * scale, spacing * scale, stroke_width * scale, inline_math=inline_math)
                 score, (dx, dy) = _match(target, mask)
                 # Overlap alone can prefer a smaller bold face over a regular
                 # face with slightly different glyph proportions. Compare soft
@@ -213,7 +216,7 @@ def _fit_at_angle(image: np.ndarray, region: dict, font_ids=None, progress=None,
                 # strokes; no hard-coded preference for Regular or thin fonts.
                 ink_error = abs(math.log(max(float(mask.sum()), 1e-6) / max(target_ink, 1e-6)))
                 score = max(0.0, score - .18 * min(ink_error, 1.0))
-                layout = outline_layout(fid, text, size, spacing, stroke_width)
+                layout = outline_layout(fid, text, size, spacing, stroke_width, inline_math=inline_math)
                 item = {"font_id": fid, "font_label": font_catalog()[fid]["label"],
                         "font_size": round(size, 2), "letter_spacing": round(spacing, 2), "stroke_width": stroke_width,
                         **source_position(evidence["x"]-pad+dx/scale, evidence["y"]-pad+dy/scale,
@@ -235,7 +238,7 @@ def _fit_at_angle(image: np.ndarray, region: dict, font_ids=None, progress=None,
                     shortlisted.append(item["font_id"])
                 if len(shortlisted) == 3:
                     break
-            ids.extend(fid for fid in family_weight_fonts(shortlisted, text) if fid not in ids)
+            ids.extend(fid for fid in family_weight_fonts(shortlisted, font_text) if fid not in ids)
     if not candidates:
         raise ValueError("候选字体渲染失败，请尝试另一种字体。")
     candidates.sort(key=lambda c: c["score"], reverse=True)
@@ -244,7 +247,7 @@ def _fit_at_angle(image: np.ndarray, region: dict, font_ids=None, progress=None,
     result["alternatives"] = candidates[:5]
     result["fit_status"] = "review" if candidates[0]["score"] < .65 else "fitted"
     result["fit_note"] = "拟合分数衡量候选与原图的接近程度，不代表文字识别正确率。"
-    layout = outline_layout(result["font_id"], text, result["font_size"], result["letter_spacing"], stroke_width)
+    layout = outline_layout(result["font_id"], text, result["font_size"], result["letter_spacing"], stroke_width, inline_math=inline_math)
     reason = automatic_fit_failure(result, layout)
     if reason:
         result.update(enabled=False, fit_status="preserved", fit_note=reason)

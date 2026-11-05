@@ -103,7 +103,7 @@
         <summary><span>内容</span></summary>
         <div class="section-body">
           <label class="field inline-field">区域类型<select id="kindField"><option value="text">普通文字</option><option value="formula">公式</option></select></label>
-          <label id="plainTextLabel" class="field">文字内容<textarea id="textField" rows="2" placeholder="输入这一行的正确文字"></textarea></label>
+          <label id="plainTextLabel" class="field">文字内容<textarea id="textField" rows="2" placeholder="文字或 LaTeX，如 \[w_C\]" title="可在文字中直接输入 LaTeX，如 \[w_C\]"></textarea></label>
           <button id="recognizeTextBtn" class="rescan-text" title="从此框的原字范围重新识别并匹配文字">重新识别文字</button>
           <div id="formulaPanel" hidden>
             <label class="field">LaTeX 公式<textarea id="latexField" rows="4" spellcheck="false" placeholder="例如：E=mc^2"></textarea></label>

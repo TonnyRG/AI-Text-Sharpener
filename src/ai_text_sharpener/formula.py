@@ -145,20 +145,28 @@ def formula_base(latex):
     root=etree.fromstring(result.stdout.encode())
     if root.xpath('.//*[local-name()="text" or local-name()="image" or local-name()="script" or local-name()="foreignObject"]'):
         raise ValueError('公式包含无法矢量化的内容。')
-    vx,vy,vw,vh=map(float,root.attrib['viewBox'].split())
+    view_box = root.get('viewBox', '').split()
+    if len(view_box) != 4:
+        raise ValueError('公式需要明确的排版宽度，请缩短或拆分公式。')
+    vx,vy,vw,vh=map(float,view_box)
     # One TeX em is 1000 units; rasterize once to find actual ink bounds.
     factor=64/1000
-    width,height=vw*factor,vh*factor
+    # Measure surrounding overhangs as well as the logical TeX box. An
+    # italic f, for example, may paint beyond its cursor advance.
+    margin = 64
+    width,height=vw*factor + 2*margin,vh*factor + 2*margin
     if width*height>8_000_000 or max(width,height)>16000:
         raise ValueError('公式尺寸过大，请拆分公式。')
     inner=''.join(etree.tostring(c,encoding='unicode') for c in root)
-    body=f'<g transform="scale({factor}) translate({-vx} {-vy})">{inner}</g>'
+    body=f'<g transform="translate({margin} {margin}) scale({factor}) translate({-vx} {-vy})">{inner}</g>'
     svg=svg_document(width,height,body)
     image=np.asarray(Image.open(io.BytesIO(resvg_py.svg_to_bytes(svg_string=svg))).convert('RGBA'))
     points=cv2.findNonZero(image[:,:,3])
     if points is None:raise ValueError('公式没有可绘制的内容。')
     x,y,w,h=cv2.boundingRect(points)
-    return {'width':w,'height':h,'body':f'<g transform="translate({-x} {-y})">{body}</g>'}
+    return {'width': w, 'height': h, 'left': vx*factor + x - margin,
+            'baseline': margin - vy*factor - y, 'advance': vw*factor,
+            'body': f'<g transform="translate({-x} {-y})">{body}</g>'}
 
 
 def formula_layout(latex, size, stroke_width=0):
@@ -167,7 +175,10 @@ def formula_layout(latex, size, stroke_width=0):
     # Stroke is in output pixels; translate to keep the ink origin consistent.
     inner = base["body"].replace('stroke-width="0"', "")
     body=f'<g transform="translate({stroke_width/2} {stroke_width/2}) scale({scale})" stroke="currentColor" stroke-width="{stroke_width*1000/size}" stroke-linejoin="round">{inner}</g>'
-    return {'width':base['width']*scale+stroke_width, 'height':base['height']*scale+stroke_width,'body':body}
+    return {'width': base['width']*scale + stroke_width, 'height': base['height']*scale + stroke_width,
+            'left': base['left']*scale - stroke_width/2,
+            'baseline': base['baseline']*scale + stroke_width/2,
+            'advance': base['advance']*scale, 'body': body}
 
 
 def recognize_formula(image, region):

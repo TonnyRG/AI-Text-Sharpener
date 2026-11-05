@@ -8,6 +8,7 @@ import numpy as np
 
 from .fidelity import crop_evidence
 from .geometry import source_frame
+from .inline_math import region_has_inline_math
 from .typography import outline_layout
 
 
@@ -37,7 +38,8 @@ def region_layout(region):
         for run in region.get("color_runs", []):
             colors[run["start"]:run["end"]] = [run["color"]] * (run["end"] - run["start"])
     return outline_layout(region["font_id"], region["text"], region["font_size"],
-                          region.get("letter_spacing", 0), region.get("stroke_width", 0), tuple(colors))
+                          region.get("letter_spacing", 0), region.get("stroke_width", 0), tuple(colors),
+                          inline_math=region_has_inline_math(region))
 
 
 def recover_colors(image, region):
@@ -50,6 +52,8 @@ def recover_colors(image, region):
     if region.get("kind") == "formula" or not region.get("text", "").strip():
         return {"color_note": "公式或空文字不参与多色提取。"}
     text = region["text"]
+    if region_has_inline_math(region):
+        return {"color_note": "内嵌公式请手动设置片段颜色。"}
     original = region.get("original_text", "")
     if original and re.sub(r"\s", "", text) != re.sub(r"\s", "", original):
         return {"color_note": "内容已改动，无法可靠对应原字颜色，请手动设置片段颜色。"}
